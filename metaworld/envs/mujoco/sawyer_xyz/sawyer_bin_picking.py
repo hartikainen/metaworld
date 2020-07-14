@@ -11,8 +11,8 @@ class SawyerBinPickingEnv(SawyerXYZEnv):
         liftThresh = 0.1
         hand_low = (-0.5, 0.40, 0.07)
         hand_high = (0.5, 1, 0.5)
-        obj_low = (-0.5, 0.40, 0.07)
-        obj_high = (0.5, 1, 0.5)
+        obj_low = (-0.12, 0.7, 0.02)
+        obj_high = (-0.12, 0.7, 0.02)
 
         super().__init__(
             self.model_name,
@@ -34,7 +34,7 @@ class SawyerBinPickingEnv(SawyerXYZEnv):
         goal_high = self.hand_high
 
         self.liftThresh = liftThresh
-        self.max_path_length = 150
+        self.max_path_length = 200
 
         self.hand_and_obj_space = Box(
             np.hstack((self.hand_low, obj_low)),
@@ -47,8 +47,8 @@ class SawyerBinPickingEnv(SawyerXYZEnv):
         )
 
         self.goal_space = Box(goal_low, goal_high)
-        self.obj_and_goal_space = Box(low=np.array([-0.22, -0.02]),
-                                      high=np.array([0.6, 0.8]))
+        self.obj_and_goal_space = Box(low=np.array([-0.21, 0.65]),
+                                      high=np.array([-0.03, 0.75]))
 
         self.observation_space = Box(
             np.hstack((self.hand_low, obj_low, obj_low, goal_low)),
