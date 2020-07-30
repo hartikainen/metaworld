@@ -11,8 +11,11 @@ from metaworld.envs.mujoco.sawyer_xyz import (
     SawyerButtonPressTopdownWallEnv,
     SawyerButtonPressWallEnv,
     SawyerCoffeeButtonEnv,
+    SawyerCoffeeButtonEnvV2,
     SawyerCoffeePullEnv,
+    SawyerCoffeePullEnvV2,
     SawyerCoffeePushEnv,
+    SawyerCoffeePushEnvV2,
     SawyerDialTurnEnv,
     SawyerNutDisassembleEnv,
     SawyerDoorEnv,
@@ -117,6 +120,9 @@ ALL_V1_ENVIRONMENTS = OrderedDict((
 
 ALL_V2_ENVIRONMENTS = OrderedDict((
     ('bin-picking-v2', SawyerBinPickingEnvV2),
+    ('coffee-button-v2', SawyerCoffeeButtonEnvV2),
+    ('coffee-pull-v2', SawyerCoffeePullEnvV2),
+    ('coffee-push-v2', SawyerCoffeePushEnvV2),
     ('handle-press-side-v2', SawyerHandlePressSideEnvV2),
     ('lever-pull-v2', SawyerLeverPullEnvV2),
     ('reach-v2', SawyerReachEnvV2),
