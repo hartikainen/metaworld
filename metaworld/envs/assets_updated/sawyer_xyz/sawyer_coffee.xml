@@ -5,13 +5,12 @@
     <include file="../objects/assets/xyz_base_dependencies.xml"/>
 
     <worldbody>
-
-        <body name="obj" pos="0 0.6 0.1">
-          <freejoint/>
-
-          <include file="../objects/assets/mug.xml"/>
-        </body>
         <include file="../objects/assets/xyz_base.xml"/>
+
+        <body name="mugbody" pos="0 0.6 0.1">
+            <freejoint/>
+            <include file="../objects/assets/mug.xml"/>
+        </body>
 
         <body name="coffee_machine" pos="0 .9 0">
           <include file="../objects/assets/coffeemachine.xml"/>

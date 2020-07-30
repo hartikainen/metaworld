@@ -184,6 +184,19 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         _id = self.model.site_names.index(siteName)
         return self.data.site_xpos[_id].copy()
 
+    def _get_fingers_center(self):
+        """Retrieves the center of mass of the Sawyer's grabber fingers
+
+        Returns:
+            np.ndarray: Flat 3 element array containing the XYZ coords
+                of the center of mass
+        """
+        finger_right, finger_left = (
+            self.get_site_pos('rightEndEffector'),
+            self.get_site_pos('leftEndEffector')
+        )
+        return (finger_right + finger_left) / 2.0
+
     def _get_pos_objects(self):
         """Retrieves object position(s) from mujoco properties or instance vars
 

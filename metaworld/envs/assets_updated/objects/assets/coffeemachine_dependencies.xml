@@ -15,7 +15,6 @@
       <default class="cm_base">
           <joint armature="0.001" damping="2" limited="true"/>
           <geom conaffinity="0" contype="0" group="1" type="mesh"/>
-          <position ctrllimited="true" ctrlrange="0 1.57"/>
           <default class="cm_viz">
               <geom condim="4" type="mesh"/>
           </default>
