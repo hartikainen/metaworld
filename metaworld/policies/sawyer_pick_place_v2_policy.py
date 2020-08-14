@@ -41,12 +41,12 @@ class SawyerPickPlaceV2Policy(Policy):
         # Once XY error is low enough, drop end effector down on top of puck
         elif abs(pos_curr[2] - pos_puck[2]) > 0.05 and pos_puck[-1] < 0.03:
             return pos_puck + np.array([0., 0., 0.03])
-        # If not at the same Z height as the goal, move up to that plane
-        elif abs(pos_curr[2] - pos_goal[2]) > 0.04:
-            return np.array([pos_curr[0], pos_curr[1], pos_goal[2]])
-        # Move to the goal
+        # # If not at the same Z height as the goal, move up to that plane
+        # elif abs(pos_curr[2] - pos_goal[2]) > 0.04:
+        #     return np.array([pos_curr[0], pos_curr[1], pos_goal[2]])
+        # # Move to the goal
         else:
-            return pos_goal
+            return pos_curr
 
     @staticmethod
     def _grab_effort(o_d):

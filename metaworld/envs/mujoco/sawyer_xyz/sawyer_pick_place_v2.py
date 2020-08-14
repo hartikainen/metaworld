@@ -226,5 +226,5 @@ class SawyerPickPlaceEnvV2(SawyerXYZEnv):
         place_rew, placing_dist = place_reward()
         assert ((place_rew >= 0) and (pick_rew >= 0))
 
-        reward = reach_rew + pick_rew + place_rew
+        reward = reach_rew # + pick_rew + place_rew
         return [reward, reach_dist, pick_rew, placing_dist]
