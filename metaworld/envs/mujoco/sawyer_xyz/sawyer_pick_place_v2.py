@@ -192,7 +192,7 @@ class SawyerPickPlaceEnvV2(SawyerXYZEnv):
             if reach_dist < 0.05:
                 reach_rew = -reach_dist + max(actions[-1], 0)/50
 
-            return reach_rew, reach_dist
+            return 100 * reach_rew, reach_dist
 
         def pick_reward():
             h_scale = 100
@@ -204,7 +204,7 @@ class SawyerPickPlaceEnvV2(SawyerXYZEnv):
                 return 0
 
         def place_reward():
-            c1 = 1000
+            c1 = 10
             c2 = 0.01
             c3 = 0.001
             if self.pick_completed and reach_dist < 0.1 and not obj_dropped():
