@@ -206,20 +206,20 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             assert np.all(goal == self._get_site_pos('goal_pick_place'))
 
             def reachReward():
-                reachRew = -reachDist
                 reachDistxy = np.linalg.norm(objPos[:-1] - fingerCOM[:-1])
-                zRew = np.linalg.norm(fingerCOM[-1] - self.init_fingerCOM[-1])
+                zDist = np.linalg.norm(fingerCOM[-1] - self.init_fingerCOM[-1])
 
-                if reachDistxy < 0.05:
-                    reachRew = -reachDist
+                if reachDist < 5e-2:
+                    reachRew = - reachDist + max(actions[-1], 0) / 50
+                elif 5e-2 < reachDistxy:
+                    reachRew = - (reachDistxy + 2 * zDist)
+                elif reachDistxy <= 5e-2:
+                    reachRew = - reachDist
                 else:
-                    reachRew =  -reachDistxy - 2*zRew
+                    reachRew = - reachDist
 
-                #incentive to close fingers when reachDist is small
-                if reachDist < 0.05:
-                    reachRew = -reachDist + max(actions[-1],0)/50
 
-                return 100 * reachRew , reachDist
+                return 5 * (self.maxReachDist + reachRew) , reachDist
 
             def pickCompletionCriteria():
                 tolerance = 0.01
@@ -241,7 +241,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 hScale = 100
                 if self.pickCompleted and not(objDropped()):
                     return hScale*heightTarget
-                elif (reachDist < 0.1) and (objPos[2]> (self.objHeight + 0.005)) :
+                elif (reachDist < 0.1) and (objPos[2]> (self.objHeight + 0.005)):
                     return hScale* min(heightTarget, objPos[2])
                 else:
                     return 0
