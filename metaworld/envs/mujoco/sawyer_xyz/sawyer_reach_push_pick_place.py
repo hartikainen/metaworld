@@ -233,7 +233,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 if reachDist < 0.05:
                     reachRew = -reachDist + max(actions[-1],0)/50
 
-                return reachRew , reachDist
+                return 100 * reachRew , reachDist
 
             def pickCompletionCriteria():
                 tolerance = 0.01
@@ -261,12 +261,12 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                     return 0
 
             def placeReward():
-                c1 = 1000
+                c1 = 10
                 c2 = 0.01
                 c3 = 0.001
                 cond = self.pickCompleted and (reachDist < 0.1) and not(objDropped())
                 if cond:
-                    placeRew = 1000*(self.maxPlacingDist - placingDist) + c1*(np.exp(-(placingDist**2)/c2) + np.exp(-(placingDist**2)/c3))
+                    placeRew = c1*(self.maxPlacingDist - placingDist) + c1*(np.exp(-(placingDist**2)/c2) + np.exp(-(placingDist**2)/c3))
                     placeRew = max(placeRew,0)
                     return [placeRew , placingDist]
                 else:
