@@ -226,14 +226,13 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 if reachDist < 5e-2:
                     reachRew = - reachDist + max(actions[-1], 0) / 50
                 elif 5e-2 < reachDistxy:
-                    reachRew = - (reachDistxy + 2 * zDist)
+                    reachRew = - (reachDistxy + zDist)
                 elif reachDistxy <= 5e-2:
                     reachRew = - reachDist
                 else:
                     reachRew = - reachDist
 
-
-                return 5 * (self.maxReachDist + reachRew) , reachDist
+                return 5 * (self.maxReachDist / 2 + reachRew) , reachDist
 
             def pickCompletionCriteria():
                 tolerance = 0.01
