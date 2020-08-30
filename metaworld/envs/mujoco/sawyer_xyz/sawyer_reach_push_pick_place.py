@@ -184,13 +184,25 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             del actions
             del obs
 
-            c1 = 1000
-            c2 = 0.01
-            c3 = 0.001
-            reachDist = np.linalg.norm(fingerCOM - goal)
-            reachRew = c1*(self.maxReachDist - reachDist) + c1*(np.exp(-(reachDist**2)/c2) + np.exp(-(reachDist**2)/c3))
-            reachRew = max(reachRew, 0)
-            reward = reachRew
+            epsilon = 1e-2
+            max_reach_distance = self.maxReachDist
+            reach_distance = np.linalg.norm(fingerCOM - goal)
+            reach_reward = -np.log(
+                reach_distance + epsilon) + np.log(max_reach_distance + epsilon)
+
+            # c1 = 1000
+            # c2 = 0.01
+            # c3 = 0.001
+            # reachDist = np.linalg.norm(fingerCOM - goal)
+            # reachRew = c1 * (
+            #     self.maxReachDist - reachDist
+            # ) + c1 * (np.exp(-(reachDist**2)/c2) + np.exp(-(reachDist**2)/c3))
+            # reachRew = max(reachRew, 0)
+            # reward = reachRew
+            #
+            reward = reach_reward
+            reachRew = reach_reward
+            reachDist = reach_distance
             return [reward, reachRew, reachDist, None, None, None, None, None]
 
         def compute_reward_push(actions, obs):
@@ -220,19 +232,56 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             assert np.all(goal == self.get_site_pos('goal_pick_place'))
 
             def reachReward():
-                reachDistxy = np.linalg.norm(objPos[:-1] - fingerCOM[:-1])
-                zDist = np.linalg.norm(fingerCOM[-1] - self.init_fingerCOM[-1])
+                epsilon = 1e-2
+                max_reach_distance = self.maxReachDist
 
-                if reachDist < 5e-2:
-                    reachRew = - reachDist + max(actions[-1], 0) / 50
-                elif 5e-2 < reachDistxy:
-                    reachRew = - (reachDistxy + zDist)
-                elif reachDistxy <= 5e-2:
-                    reachRew = - reachDist
-                else:
-                    reachRew = - reachDist
+                reach_distance = np.linalg.norm(fingerCOM - goal)
+                reach_distance_xy = np.linalg.norm(fingerCOM[:-1] - goal[:-1])
+                reach_distance_xy = np.linalg.norm(fingerCOM[:-1] - goal[:-1])
+                z_distance_from_reset = np.linalg.norm(
+                    fingerCOM[-1] - self.init_fingerCOM[-1])
+                reach_reward = (
+                    - np.log(reach_distance + epsilon)
+                    + np.log(max_reach_distance + epsilon))
 
-                return 5 * (self.maxReachDist / 2 + reachRew) , reachDist
+                reward_bounds = [0.0, - np.log(epsilon)]
+
+                if reach_distance < 5e-2:
+                    reward = reach_reward + max(actions[-1], 0) / 50
+                elif 5e-2 < reach_distance_xy:
+                    reward = reach_reward + z_distance_from_reset
+
+
+                # reachDistxy = np.linalg.norm(objPos[:-1] - fingerCOM[:-1])
+                # zDist = np.linalg.norm(fingerCOM[-1] - self.init_fingerCOM[-1])
+
+                # if reachDist < 5e-2:
+                #     reachRew = - reachDist + max(actions[-1], 0) / 50
+                # elif 5e-2 < reachDistxy:
+                #     reachRew = - (reachDistxy + zDist)
+                # elif reachDistxy <= 5e-2:
+                #     reachRew = - reachDist
+                # else:
+                #     reachRew = - reachDist
+
+
+                # print(reachDist, reachDistxy, zDist)
+
+                # if reachRew * 100 < -10:
+                #     breakpoint()
+                #     pass
+
+                # print({
+                #     'reachDistxy': round(reachDistxy, 2),
+                #     'reachDist': round(reachDist, 2),
+                #     'zRew': round(zRew, 2),
+                #     'actions[-1]': round(actions[-1], 2),
+                # })
+
+                # self.maxReachDist - reachRew
+
+                # return 5 * (self.maxReachDist / 2 + reachRew) , reachDist
+                return reach_reward, reach_distance
 
             def pickCompletionCriteria():
                 tolerance = 0.01
