@@ -197,23 +197,52 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             return [reward, reachRew, reachDist, None, None, None, None, None]
 
         def compute_reward_push(actions, obs):
-            c1 = 1000
-            c2 = 0.01
-            c3 = 0.001
-            del actions
-            del obs
-
             assert np.all(goal == self._get_site_pos('goal_push'))
-            reachDist = np.linalg.norm(fingerCOM - objPos)
-            pushDist = np.linalg.norm(objPos[:2] - goal[:2])
-            reachRew = -reachDist
-            if reachDist < 0.05:
-                pushRew = 1000*(self.maxPushDist - pushDist) + c1*(np.exp(-(pushDist**2)/c2) + np.exp(-(pushDist**2)/c3))
-                pushRew = max(pushRew, 0)
+
+            def reachReward():
+                epsilon = 1e-2
+                max_reach_distance = self.maxReachDist
+                reach_distance = np.linalg.norm(objPos - fingerCOM)
+                reach_distance_xy = np.linalg.norm(objPos[:-1] - fingerCOM[:-1])
+                z_distance_from_reset = np.linalg.norm(
+                    fingerCOM[-1] - self.init_fingerCOM[-1])
+                reach_reward = (
+                    - np.log(reach_distance + epsilon)
+                    + np.log(max_reach_distance + epsilon))
+
+                reward_bounds = [0.0, - np.log(epsilon)]
+
+                if reach_distance < 5e-2:
+                    reward = reach_reward + max(actions[-1], 0) / 25
+                elif 5e-2 < reach_distance_xy:
+                    reward = reach_reward + z_distance_from_reset
+
+                return reach_reward, reach_distance
+
+            push_distance = np.linalg.norm(objPos[:2] - goal[:2])
+            reach_reward, reach_distance = reachReward()
+
+            reach_success = reach_distance < 5e-2 
+
+            if reach_success:
+                epsilon = 1e-2
+                max_push_distance = self.maxPushDist
+
+                push_reward_weight = (1 / max_push_distance) * 5.0
+                push_reward = push_reward_weight * (
+                    max_push_distance - push_distance)
             else:
-                pushRew = 0
-            reward = reachRew + pushRew
-            return [reward, reachRew, reachDist, pushRew, pushDist, None, None, None]
+                push_reward = 0.0
+
+            reward = reach_reward + push_reward
+            # print({
+            #     'reward': round(reward, 2),
+            #     'reach_rew': round(reach_reward, 2),
+            #     'push_rew': round(push_reward, 2),
+            #     'reach_dist': round(reach_distance, 2),
+            #     'push_dist': round(push_distance, 2),
+            # })
+            return [reward, reach_reward, reach_distance, push_reward, push_distance, None, None, None]
 
         def compute_reward_pick_place(actions, obs):
             del obs
