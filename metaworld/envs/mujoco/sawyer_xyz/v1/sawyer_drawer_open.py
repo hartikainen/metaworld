@@ -30,8 +30,6 @@ class SawyerDrawerOpenEnv(SawyerXYZEnv):
         self.obj_init_angle = self.init_config['obj_init_angle']
         self.hand_init_pos = self.init_config['hand_init_pos']
 
-        
-
         self._random_reset_space = Box(
             np.array(obj_low),
             np.array(obj_high),
@@ -45,17 +43,17 @@ class SawyerDrawerOpenEnv(SawyerXYZEnv):
     @_assert_task_is_set
     def step(self, action):
         ob = super().step(action)
-        reward, reachDist, pullDist = self.compute_reward(action, ob)
-        self.curr_path_length += 1
+        obs_dict = self._get_obs_dict()
+        reward_info = self.compute_reward(action, obs_dict)
+        reward = reward_info['reward']
         info = {
-            'reachDist': reachDist,
-            'goalDist': pullDist,
-            'epRew': reward,
-            'pickRew': None,
-            'success': float(pullDist <= 0.08)
+            **reward_info,
         }
+        terminal = False
 
-        return ob, reward, False, info
+        self.curr_path_length += 1
+
+        return ob, reward, terminal, info
 
     def _get_pos_objects(self):
         return self.data.get_geom_xpos('handle').copy()
@@ -82,8 +80,8 @@ class SawyerDrawerOpenEnv(SawyerXYZEnv):
         self.sim.model.body_pos[self.model.body_name2id('drawer')] = self.obj_init_pos
         self.sim.model.body_pos[self.model.body_name2id('drawer_cover')] = drawer_cover_pos
         self.sim.model.site_pos[self.model.site_name2id('goal')] = self._target_pos
-        self.maxPullDist = 0.2
-        self.target_reward = 1000*self.maxPullDist + 1000*2
+        self.maxPullDist = np.abs(
+            self.data.get_geom_xpos('handle')[1] - self._target_pos[1])
 
         return self._get_obs()
 
@@ -92,39 +90,44 @@ class SawyerDrawerOpenEnv(SawyerXYZEnv):
 
         rightFinger, leftFinger = self._get_site_pos('rightEndEffector'), self._get_site_pos('leftEndEffector')
         self.init_fingerCOM  =  (rightFinger + leftFinger)/2
-        self.reachCompleted = False
 
     def compute_reward(self, actions, obs):
         del actions
 
-        objPos = obs[3:6]
-        rightFinger, leftFinger = self._get_site_pos('rightEndEffector'), self._get_site_pos('leftEndEffector')
-        fingerCOM  =  (rightFinger + leftFinger)/2
-        pullGoal = self._target_pos
-        pullDist = np.abs(objPos[1] - pullGoal[1])
-        reachDist = np.linalg.norm(objPos - fingerCOM)
-        reachRew = -reachDist
+        obs = obs['state_observation']
 
-        self.reachCompleted = reachDist < 0.05
+        object_position = obs[3:6]
+        right_finger_pos = self._get_site_pos('rightEndEffector')
+        left_finger_pos = self._get_site_pos('leftEndEffector')
+        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
+        pull_goal = self._target_pos
+        reach_distance = np.linalg.norm(
+            object_position - gripper_center_of_mass,
+            ord=2)
+        pull_distance = np.abs(object_position[1] - pull_goal[1])
+        reach_reward = - reach_distance
+        reach_success = reach_distance < 6.5e-2
 
-        def pullReward():
-            c1 = 1000
-            c2 = 0.01
-            c3 = 0.001
+        def compute_pull_reward():
+            max_pull_distance = self.maxPullDist
 
-            if self.reachCompleted:
-                pullRew = 1000*(self.maxPullDist - pullDist) + c1*(np.exp(-(pullDist**2)/c2) + np.exp(-(pullDist**2)/c3))
-                pullRew = max(pullRew,0)
-                return pullRew
-            else:
-                return 0
+            pull_reward_weight = (1 / max_pull_distance) * 5.0
+            pull_reward = float(reach_success) * pull_reward_weight * (
+                max_pull_distance - pull_distance)
 
-            pullRew = max(pullRew,0)
+            return pull_reward
 
-            return pullRew
+        pull_reward = compute_pull_reward()
+        pull_success = success = pull_distance <= 0.08
+        reward = reach_reward + pull_reward
 
-
-        pullRew = pullReward()
-        reward = reachRew + pullRew
-
-        return [reward, reachDist, pullDist]
+        return {
+            'reward': reward,
+            'reach_distance': reach_distance,
+            'reach_reward': reach_reward,
+            'reach_success': reach_success,
+            'pull_distance': pull_distance,
+            'pull_reward': pull_reward,
+            'pull_success': pull_success,
+            'success': success,
+        }
