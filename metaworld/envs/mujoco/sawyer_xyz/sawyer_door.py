@@ -47,6 +47,13 @@ class SawyerDoorEnv(SawyerXYZEnv):
     def model_name(self):
         return get_asset_full_path('sawyer_xyz/sawyer_door_pull.xml')
 
+    @property
+    def gripper_center_of_mass(self):
+        right_finger_pos = self.get_site_pos('rightEndEffector')
+        left_finger_pos = self.get_site_pos('leftEndEffector')
+        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
+        return gripper_center_of_mass
+
     @_assert_task_is_set
     def step(self, action):
         self.set_xyz_action(action[:3])
@@ -55,12 +62,18 @@ class SawyerDoorEnv(SawyerXYZEnv):
         self._set_goal_marker(self._state_goal)
         ob = self._get_obs()
         obs_dict = self._get_obs_dict()
-        reward, reachDist, pullDist = self.compute_reward(action, obs_dict)
-        self.curr_path_length += 1
-        info =  {'reachDist': reachDist, 'goalDist': pullDist, 'epRew' : reward, 'pickRew':None, 'success': float(pullDist <= 0.08)}
-        info['goal'] = self.goal
+        reward_info = self.compute_reward(action, obs_dict)
+        reward = reward_info['reward']
+        info = {
+            **reward_info,
+            'goal': self.goal,
+        }
+        terminal = False
 
-        return ob, reward, False, info
+        self.curr_path_length += 1
+
+        return ob, reward, terminal, info
+
 
     def _get_pos_objects(self):
         return self.data.get_geom_xpos('handle').copy()
@@ -90,8 +103,12 @@ class SawyerDoorEnv(SawyerXYZEnv):
         self.sim.model.body_pos[self.model.body_name2id('door')] = self.obj_init_pos
         self.sim.model.site_pos[self.model.site_name2id('goal')] = self._state_goal
         self._set_obj_xyz(0)
-        self.maxPullDist = np.linalg.norm(self.data.get_geom_xpos('handle')[:-1] - self._state_goal[:-1])
-        self.target_reward = 1000*self.maxPullDist + 1000*2
+        self.max_reach_distance = np.linalg.norm(
+            self.data.get_geom_xpos('handle') - self.init_fingerCOM,
+            ord=2)
+        self.max_pull_distance = np.linalg.norm(
+            self.data.get_geom_xpos('handle')[:-1] - self._state_goal[:-1],
+            ord=2)
 
         return self._get_obs()
 
@@ -105,36 +122,46 @@ class SawyerDoorEnv(SawyerXYZEnv):
         self.init_fingerCOM  =  (rightFinger + leftFinger)/2
         self.reachCompleted = False
 
-    def compute_reward(self, actions, obs):
+    def compute_reward(self, actions, observation):
         del actions
 
-        obs = obs['state_observation']
-        objPos = obs[3:6]
+        object_position = observation['state_observation'][3:6]
 
-        rightFinger, leftFinger = self.get_site_pos('rightEndEffector'), self.get_site_pos('leftEndEffector')
-        fingerCOM  =  (rightFinger + leftFinger)/2
+        gripper_center_of_mass = self.gripper_center_of_mass
+        pull_goal = self._state_goal
 
-        pullGoal = self._state_goal
+        reach_distance = np.linalg.norm(
+            object_position - gripper_center_of_mass, ord=2)
+        max_reach_distance = self.max_reach_distance
+        reach_success = reach_distance < 6.5e-2
 
-        pullDist = np.linalg.norm(objPos[:-1] - pullGoal[:-1])
-        reachDist = np.linalg.norm(objPos - fingerCOM)
-        reachRew = -reachDist
+        pull_distance = np.linalg.norm(
+            object_position[:-1] - pull_goal[:-1], ord=2)
+        max_pull_distance = self.max_pull_distance
+        pull_success = pull_distance <= 8e-2
 
-        self.reachCompleted = reachDist < 0.05
+        max_reach_reward = max_reach_distance
 
-        def pullReward():
-            c1 = 1000
-            c2 = 0.01
-            c3 = 0.001
+        reach_reward = (
+            max_reach_reward
+            if pull_success
+            else (max_reach_distance - reach_distance) / max_reach_distance)
 
-            if self.reachCompleted:
-                pullRew = 1000*(self.maxPullDist - pullDist) + c1*(np.exp(-(pullDist**2)/c2) + np.exp(-(pullDist**2)/c3))
-                pullRew = max(pullRew,0)
-                return pullRew
-            else:
-                return 0
+        pull_reward_weight = 5.0
+        pull_reward = pull_reward_weight * (
+            max_pull_distance - pull_distance) / max_pull_distance
+        reward = reach_reward + pull_reward
+        success = pull_success
 
-        pullRew = pullReward()
-        reward = reachRew + pullRew
-
-        return [reward, reachDist, pullDist]
+        result = {
+            'reward': reward,
+            'reach_reward': reach_reward,
+            'reach_distance': reach_distance,
+            'reach_success': reach_success,
+            'pull_reward': pull_reward,
+            'pull_distance': pull_distance,
+            'pull_success': pull_success,
+            'goal_distance': pull_distance,
+            'success': success,
+        }
+        return result
