@@ -135,9 +135,8 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
         max_pull_distance = self.max_pull_distance
         pull_success = pull_distance <= 6e-2
 
-        epsilon = 1e-2
-        max_reach_reward = -np.log(epsilon)
-        max_pull_reward = -np.log(epsilon)
+        max_reach_reward = max_reach_distance
+        max_pull_reward = max_pull_distance
 
         reach_reward = (
             max_reach_reward
