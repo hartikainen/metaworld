@@ -161,23 +161,27 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             del actions
             del observation
 
+            reach_goal = self._target_pos
+
+            reach_distance = np.linalg.norm(
+                reach_goal - gripper_center_of_mass, ord=2)
+            max_reach_distance = self.max_reach_distance
+
             epsilon = 1e-2
             max_reach_distance = self.max_reach_distance
             reach_distance = np.linalg.norm(gripper_center_of_mass - goal)
-            reach_reward = -np.log(
-                reach_distance + epsilon) + np.log(max_reach_distance + epsilon)
 
-            reward = reach_reward
-            reach_reward = reach_reward
-            reach_distance = reach_distance
-            goal_distance = reach_distance
+            reach_reward = (
+                max_reach_distance - reach_distance
+            ) / max_reach_distance
             success = reach_distance <= 5e-2
 
             result = {
                 'reward': reward,
                 'reach_reward': reach_reward,
                 'reach_distance': reach_distance,
-                'goal_distance': goal_distance
+                'goal_distance': goal_distance,
+                'success': success,
             }
             return result
 
