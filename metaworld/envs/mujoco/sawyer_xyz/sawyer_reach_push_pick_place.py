@@ -8,7 +8,7 @@ from metaworld.envs.mujoco.sawyer_xyz.base import SawyerXYZEnv, _assert_task_is_
 class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
 
     def __init__(self):
-        liftThresh = 0.04
+        lift_threshold = 0.04
         goal_low=(-0.1, 0.8, 0.05)
         goal_high=(0.1, 0.9, 0.3)
         hand_low = (-0.5, 0.40, 0.05)
@@ -35,7 +35,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         self.obj_init_pos = self.init_config['obj_init_pos']
         self.hand_init_pos = self.init_config['hand_init_pos']
 
-        self.liftThresh = liftThresh
+        self.lift_threshold = lift_threshold
         self.max_path_length = 150
 
         self._random_reset_space = Box(
@@ -66,6 +66,13 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
     def model_name(self):
         return get_asset_full_path('sawyer_xyz/sawyer_reach_push_pick_and_place.xml')
 
+    @property
+    def gripper_center_of_mass(self):
+        right_finger_pos = self.get_site_pos('rightEndEffector')
+        left_finger_pos = self.get_site_pos('leftEndEffector')
+        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
+        return gripper_center_of_mass
+
     @_assert_task_is_set
     def step(self, action):
         self.set_xyz_action(action[:3])
@@ -74,41 +81,17 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         self._set_goal_marker(self._state_goal)
         ob = self._get_obs()
         obs_dict = self._get_obs_dict()
-        (reward,
-         reach_reward,
-         reach_distance,
-         _,
-         push_distance,
-         pick_reward,
-         place_reward,
-         place_distance) = self.compute_reward(action, obs_dict)
+        reward_info = self.compute_reward(action, obs_dict)
+        reward = reward_info['reward']
+        info = {
+            **reward_info,
+            'goal': self.goal,
+        }
+        terminal = False
+
         self.curr_path_length +=1
 
-        goal_distance = (
-            place_distance
-            if self.task_type == 'pick_place'
-            else push_distance)
-
-        if self.task_type == 'reach':
-            success = float(reach_distance <= 0.05)
-        else:
-            success = float(goal_distance <= 0.07)
-
-        info = {
-            'full_reward': reward,
-            'reach_reward': reach_reward,
-            'reach_distance': reach_distance,
-            # _
-            'push_distance': push_distance,
-            'pick_reward': pick_reward,
-            'place_reward': place_reward,
-            'place_distance': place_distance,
-            'goal_distance': goal_distance,
-            'success': success,
-        }
-        info['goal'] = self.goal
-
-        return ob, reward, False, info
+        return ob, reward, terminal, info
 
     def _get_pos_objects(self):
         return self.data.get_geom_xpos('objGeom')
@@ -144,8 +127,8 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         self._state_goal = self._get_state_rand_vec()
         self.obj_init_pos = self.adjust_initObjPos(self.init_config['obj_init_pos'])
         self.obj_init_angle = self.init_config['obj_init_angle']
-        self.objHeight = self.data.get_geom_xpos('objGeom')[2]
-        self.heightTarget = self.objHeight + self.liftThresh
+        self.object_height = self.data.get_geom_xpos('objGeom')[2]
+        self.height_target = self.object_height + self.lift_threshold
 
         if self.random_init:
             goal_pos = self._get_state_rand_vec()
@@ -162,21 +145,17 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
 
         self._set_goal_marker(self._state_goal)
         self._set_obj_xyz(self.obj_init_pos)
-        self.maxReachDist = np.linalg.norm(self.init_fingerCOM - np.array(self._state_goal))
-        self.maxPushDist = np.linalg.norm(self.obj_init_pos[:2] - np.array(self._state_goal)[:2])
-        self.maxPlacingDist = np.linalg.norm(np.array([self.obj_init_pos[0], self.obj_init_pos[1], self.heightTarget]) - np.array(self._state_goal)) + self.heightTarget
-        self.target_rewards = [1000*self.maxPlacingDist + 1000*2, 1000*self.maxReachDist + 1000*2, 1000*self.maxPushDist + 1000*2]
+        self.max_reach_distance = np.linalg.norm(
+            self.init_fingerCOM - np.array(self._state_goal),
+            ord=2)
+        self.max_push_distance = np.linalg.norm(
+            self.obj_init_pos[:2] - np.array(self._state_goal)[:2],
+            ord=2)
+        self.max_place_distance = np.linalg.norm((
+            np.array([*self.obj_init_pos[:2], self.height_target])
+            - np.array(self._state_goal)
+        ), ord=2) + self.height_target
 
-        if self.task_type == 'reach':
-            idx = 1
-        elif self.task_type == 'push':
-            idx = 2
-        elif self.task_type == 'pick_place':
-            idx = 0
-        else:
-            raise NotImplementedError
-
-        self.target_reward = self.target_rewards[idx]
         self.num_resets += 1
 
         return self._get_obs()
@@ -186,45 +165,51 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             self.data.set_mocap_pos('mocap', self.hand_init_pos)
             self.data.set_mocap_quat('mocap', np.array([1, 0, 1, 0]))
             self.do_simulation([-1,1], self.frame_skip)
-        rightFinger, leftFinger = self.get_site_pos('rightEndEffector'), self.get_site_pos('leftEndEffector')
-        self.init_fingerCOM  =  (rightFinger + leftFinger)/2
 
-    def compute_reward(self, actions, obs):
-        obs = obs['state_observation']
+        self.init_fingerCOM = self.gripper_center_of_mass
 
-        objPos = obs[3:6]
+    def compute_reward(self, actions, observation):
+        object_position = observation['state_observation'][3:6]
 
-        rightFinger, leftFinger = self.get_site_pos('rightEndEffector'), self.get_site_pos('leftEndEffector')
-        fingerCOM  =  (rightFinger + leftFinger)/2
+        gripper_center_of_mass = self.gripper_center_of_mass
 
-        heightTarget = self.heightTarget
+        height_target = self.height_target
         goal = self._state_goal
 
-        def compute_reward_reach(actions, obs):
+        def compute_reward_reach(actions, observation):
             del actions
-            del obs
+            del observation
 
             epsilon = 1e-2
-            max_reach_distance = self.maxReachDist
-            reach_distance = np.linalg.norm(fingerCOM - goal)
+            max_reach_distance = self.max_reach_distance
+            reach_distance = np.linalg.norm(gripper_center_of_mass - goal)
             reach_reward = -np.log(
                 reach_distance + epsilon) + np.log(max_reach_distance + epsilon)
 
             reward = reach_reward
-            reachRew = reach_reward
-            reachDist = reach_distance
-            return [reward, reachRew, reachDist, None, None, None, None, None]
+            reach_reward = reach_reward
+            reach_distance = reach_distance
+            goal_distance = reach_distance
+            success = reach_distance < 5e-2
 
-        def compute_reward_push(actions, obs):
+            result = {
+                'reward': reward,
+                'reach_reward': reach_reward,
+                'reach_distance': reach_distance,
+                'goal_distance': goal_distance
+            }
+            return result
+
+        def compute_reward_push(actions, observation):
             assert np.all(goal == self.get_site_pos('goal_push'))
 
             def reachReward():
                 epsilon = 1e-2
-                max_reach_distance = self.maxReachDist
-                reach_distance = np.linalg.norm(objPos - fingerCOM)
-                reach_distance_xy = np.linalg.norm(objPos[:-1] - fingerCOM[:-1])
+                max_reach_distance = self.max_reach_distance
+                reach_distance = np.linalg.norm(object_position - gripper_center_of_mass)
+                reach_distance_xy = np.linalg.norm(object_position[:-1] - gripper_center_of_mass[:-1])
                 z_distance_from_reset = np.linalg.norm(
-                    fingerCOM[-1] - self.init_fingerCOM[-1])
+                    gripper_center_of_mass[-1] - self.init_fingerCOM[-1])
                 reach_reward = (
                     - np.log(reach_distance + epsilon)
                     + np.log(max_reach_distance + epsilon))
@@ -238,14 +223,14 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
 
                 return reach_reward, reach_distance
 
-            push_distance = np.linalg.norm(objPos[:2] - goal[:2])
+            push_distance = np.linalg.norm(object_position[:2] - goal[:2])
             reach_reward, reach_distance = reachReward()
 
             reach_success = reach_distance < 5e-2 
 
             if reach_success:
                 epsilon = 1e-2
-                max_push_distance = self.maxPushDist
+                max_push_distance = self.max_push_distance
 
                 push_reward_weight = (1 / max_push_distance) * 5.0
                 push_reward = push_reward_weight * (
@@ -261,22 +246,31 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             #     'reach_dist': round(reach_distance, 2),
             #     'push_dist': round(push_distance, 2),
             # })
-            return [reward, reach_reward, reach_distance, push_reward, push_distance, None, None, None]
+            goal_distance = push_distance
+            success = push_distance < 7e-2
+            result = {
+                'reward': reward,
+                'reach_reward': reach_reward,
+                'reach_distance': reach_distance,
+                'push_reward': push_reward,
+                'push_distance': push_distance
+            }
+            return result
 
-        def compute_reward_pick_place(actions, obs):
-            del obs
+        def compute_reward_pick_place(actions, observation):
+            del observation
 
-            reach_distance = reachDist = np.linalg.norm(objPos - fingerCOM)
+            reach_distance = reachDist = np.linalg.norm(object_position - gripper_center_of_mass)
             
-            place_distance = placingDist = np.linalg.norm(objPos - goal)
+            place_distance = placingDist = np.linalg.norm(object_position - goal)
             assert np.all(goal == self.get_site_pos('goal_pick_place'))
 
             def reachReward():
                 epsilon = 1e-2
-                max_reach_distance = self.maxReachDist
-                reach_distance_xy = np.linalg.norm(objPos[:-1] - fingerCOM[:-1])
+                max_reach_distance = self.max_reach_distance
+                reach_distance_xy = np.linalg.norm(object_position[:-1] - gripper_center_of_mass[:-1])
                 z_distance_from_reset = np.linalg.norm(
-                    fingerCOM[-1] - self.init_fingerCOM[-1])
+                    gripper_center_of_mass[-1] - self.init_fingerCOM[-1])
                 reach_reward = (
                     - np.log(reach_distance + epsilon)
                     + np.log(max_reach_distance + epsilon))
@@ -326,12 +320,12 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                             and 0 < rightpad_object_contact_force)
 
                 object_in_air = not table_top_object_contacts
-                # pick_reward = float(gripping) * (1.0 + objPos[2])
-                pick_reward_weight = (1 / self.liftThresh) 
+                # pick_reward = float(gripping) * (1.0 + object_position[2])
+                pick_reward_weight = (1 / self.lift_threshold)
                 # pick_reward = (
                 #     float(gripping)
                 #     * float(object_in_air)
-                #     * (1.0 - abs(self.heightTarget - objPos[2])))
+                #     * (1.0 - abs(self.height_target - object_position[2])))
                 pick_success = gripping and object_in_air
                 pick_reward = float(pick_success)
                 # if (0 < leftpad_object_contact_force
@@ -400,20 +394,20 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             # pick_success = 0.0 < pick_reward 
 
             # def objDropped():
-            #     return (objPos[2] < (self.objHeight + 0.005)
+            #     return (object_position[2] < (self.object_height + 0.005)
             #             and 2e-2 < placingDist
             #             and 2e-2 < reachDist)
             #     # Object on the ground, far away from the goal, and from the gripper
             #     # Can tweak the margin limits
 
             def orig_pickReward():
-                # heightTarget = self.heightTarget = self.objHeight + self.liftThresh
+                # height_target = self.height_target = self.object_height + self.lift_threshold
                 hScale = 100
                 if pick_success:
-                    return hScale * heightTarget
-                elif reachDist < 0.1 and (self.objHeight + 0.005) < objPos[2]:
+                    return hScale * height_target
+                elif reachDist < 0.1 and (self.object_height + 0.005) < object_position[2]:
                     # objectDropped() or not self.pickCompleted
-                    return hScale * min(heightTarget, objPos[2])
+                    return hScale * min(height_target, object_position[2])
                 else:
                     return 0
 
@@ -421,7 +415,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 cond = pick_success and reach_distance < 0.1
                 if cond:
                     epsilon = 1e-2
-                    max_place_distance = self.maxPlacingDist
+                    max_place_distance = self.max_place_distance
 
                     place_reward_weight = (1 / max_place_distance) * 5.0
                     place_reward = place_reward_weight * (
@@ -467,55 +461,35 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             #     'reach_dist': round(reach_distance, 2),
             #     'placing_dist': round(place_distance, 2),
             # })
-            result = (
-                reward,
-                reach_reward,
-                reach_distance,
-                None,
-                None,
-                pick_reward,
-                place_reward,
-                place_distance)
+            success = place_distance <= 0.07
+            goal_distance = place_distance
+
+            result = {
+                'reward': reward,
+                'reach_reward': reach_reward,
+                'reach_distance': reach_distance,
+                'pick_reward': pick_reward,
+                'place_reward': place_reward,
+                'place_distance': place_distance,
+                'goal_distance': goal_distance,
+                'success': success,
+            }
             return result
 
         if self.task_type == 'reach':
-            return compute_reward_reach(actions, obs)
+            return compute_reward_reach(actions, observation)
         elif self.task_type == 'push':
-            return compute_reward_push(actions, obs)
+            return compute_reward_push(actions, observation)
         elif self.task_type == 'pick_place':
-            return compute_reward_pick_place(actions, obs)
+            return compute_reward_pick_place(actions, observation)
         else:
             raise NotImplementedError
         
     def viewer_setup(self):
         self.viewer.cam.trackbodyid = -1
-        self.viewer.cam.lookat[:3] = [-0.2104139 ,  0.42137601, -0.31244928]
-        self.viewer.cam.distance = 1.63
-        self.viewer.cam.elevation = -35
-        self.viewer.cam.azimuth = -140
+        self.viewer.cam.lookat[:3] = [-0.04424838, 0.59414413, 0.02608293]
+        self.viewer.cam.distance = 0.93
+        self.viewer.cam.elevation = -38.0
+        self.viewer.cam.azimuth = -170.0
 
-        # print({
-        #     'trackbodyid': self.viewer.cam.trackbodyid,
-        #     'lookat': self.viewer.cam.lookat,
-        #     'distance': self.viewer.cam.distance,
-        #     'elevation': self.viewer.cam.elevation,
-        #     'azimuth': self.viewer.cam.azimuth,
-        #     'trackbodyid': self.viewer.cam.trackbodyid,
-        # })
-
-        # {
-        #     'trackbodyid': -1,
-        #     'lookat': array([-0.2104139 ,  0.42137601, -0.31244928]),
-        #     'distance': 1.6286696771602396,
-        #     'elevation': -35.87539776626939,
-        #     'azimuth': -139.74854932301736
-        # }
-        # {
-        #     'trackbodyid': -1,
-        #     'lookat': array([-0.03778444,  0.26949207,  0.16464844]),
-        #     'distance': 2.1741263994876223,
-        #     'elevation': -25.903225806451488,
-        #     'azimuth': -127.03225806451626
-        # }
         return
-
