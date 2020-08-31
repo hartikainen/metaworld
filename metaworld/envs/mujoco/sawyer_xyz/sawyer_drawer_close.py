@@ -42,6 +42,13 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
     def model_name(self):
         return get_asset_full_path('sawyer_xyz/sawyer_drawer.xml')
 
+    @property
+    def gripper_center_of_mass(self):
+        right_finger_pos = self.get_site_pos('rightEndEffector')
+        left_finger_pos = self.get_site_pos('leftEndEffector')
+        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
+        return gripper_center_of_mass
+
     @_assert_task_is_set
     def step(self, action):
         self.set_xyz_action(action[:3])
@@ -94,8 +101,11 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
         self.sim.model.body_pos[self.model.body_name2id('drawer_cover')] = drawer_cover_pos
         self.sim.model.site_pos[self.model.site_name2id('goal')] = self._state_goal
         self._set_obj_xyz(-0.2)
-        self.maxPullDist = np.abs(
+        self.max_pull_distance = np.abs(
             self.data.get_geom_xpos('handle')[1] - self._state_goal[1])
+        self.max_reach_distance = np.linalg.norm(
+            self.gripper_center_of_mass - self._state_goal,
+            ord=2)
 
         return self._get_obs()
 
@@ -105,41 +115,42 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
             self.data.set_mocap_quat('mocap', np.array([1, 0, 1, 0]))
             self.do_simulation([-1,1], self.frame_skip)
 
-        rightFinger, leftFinger = self.get_site_pos('rightEndEffector'), self.get_site_pos('leftEndEffector')
-        self.init_fingerCOM  =  (rightFinger + leftFinger)/2
+        self.init_fingerCOM = self.gripper_center_of_mass
 
-    def compute_reward(self, actions, obs):
+    def compute_reward(self, actions, observation):
         del actions
 
-        obs = obs['state_observation']
+        object_position = observation['state_observation'][3:6]
 
-        object_position = obs[3:6]
-        right_finger_pos = self.get_site_pos('rightEndEffector')
-        left_finger_pos = self.get_site_pos('leftEndEffector')
-        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
-
+        gripper_center_of_mass = self.gripper_center_of_mass
         pull_goal = self._state_goal
 
         reach_distance = np.linalg.norm(
-            object_position - gripper_center_of_mass,
-            ord=2)
+            object_position - gripper_center_of_mass, ord=2)
+        max_reach_distance = self.max_reach_distance
+        reach_success = reach_distance < 5e-2
 
-        pull_distance = np.abs(object_position[1] - pull_goal[1])
-        reach_reward = - reach_distance
-        reach_success = reach_distance < 6.5e-2
+        pull_distance = np.linalg.norm(
+            object_position[1] - pull_goal[1])
+        max_pull_distance = self.max_pull_distance
+        pull_success = pull_distance <= 6e-2
 
-        def compute_pull_reward():
-            max_pull_distance = self.maxPullDist
+        epsilon = 1e-2
+        max_reach_reward = -np.log(epsilon)
+        max_pull_reward = -np.log(epsilon)
 
-            pull_reward_weight = (1 / max_pull_distance) * 5.0
-            pull_reward = float(reach_success) * pull_reward_weight * (
-                max_pull_distance - pull_distance)
+        reach_reward = (
+            max_reach_reward
+            if pull_success
+            else (max_reach_distance - reach_distance) / max_reach_distance)
 
-            return pull_reward
+        pull_reward = (
+            max_pull_reward
+            if pull_success
+            else (max_pull_distance - pull_distance) / max_pull_distance)
 
-        pull_reward = compute_pull_reward()
-        pull_success = success = pull_distance <= 0.06
         reward = reach_reward + pull_reward
+        success = pull_success
 
         return {
             'reward': reward,
