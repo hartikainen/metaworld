@@ -74,22 +74,56 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         return gripper_center_of_mass
 
     def _visualize_success(self, info):
+        reach_color = (
+            [0, 1, 0, 1] if info['reach_success'] else [1, 0, 0, 1])
+        self.model.site_rgba[
+            self.model.site_name2id('leftEndEffector')
+        ] = reach_color
+        self.model.site_rgba[
+            self.model.site_name2id('rightEndEffector')
+        ] = reach_color
+
         if self.task_type in ('pick_place', 'push'):
             self.model.geom_rgba[self.model.geom_name2id('objGeom')] = (
                 [0, 1, 0, 1]
                 if info['success']
                 else [1, 0, 0, 1])
         elif self.task_type == 'reach':
-            color = (
-                [0, 1, 0, 1] if info['success'] else [1, 0, 0, 1])
-            self.model.site_rgba[
-                self.model.site_name2id('leftEndEffector')
-            ] = color
-            self.model.site_rgba[
-                self.model.site_name2id('rightEndEffector')
-            ] = color
+            pass
         else:
             raise ValueError(self.task_type)
+
+    def _add_overlay(self, info):
+        if getattr(self, 'viewer', None) is None:
+            return
+
+        if self.task_type == 'pick_place':
+            info_keys = (
+                'reach_distance',
+                'reach_success',
+                'pick_success',
+                'place_distance',
+                'place_success')
+        elif self.task_type == 'push':
+            info_keys = (
+                'reach_distance',
+                'reach_success',
+                'push_distance',
+                'push_success')
+        elif self.task_type == 'reach':
+            info_keys = ('reach_distance', 'reach_success')
+        else:
+            raise ValueError(self.task_type)
+
+        if getattr(self.viewer, '_overlay', None) is not None:
+            self.viewer._overlay.clear()
+
+        for i, info_key in enumerate(info_keys):
+            value = (
+                str(info[info_key])
+                if isinstance(info[info_key], (bool, np.bool, np.bool_))
+                else str(round(info[info_key], 3)))
+            self.viewer.add_overlay(0, info_key, value)
 
     @_assert_task_is_set
     def step(self, action):
@@ -110,6 +144,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         self.curr_path_length +=1
 
         self._visualize_success(info)
+        self._add_overlay(info)
 
         return ob, reward, terminal, info
 
@@ -218,6 +253,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 'reward': reach_reward,
                 'reach_reward': reach_reward,
                 'reach_distance': reach_distance,
+                'reach_success': success,
                 'goal_distance': reach_distance,
                 'success': success,
             }
@@ -261,8 +297,10 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 'reward': reward,
                 'reach_reward': reach_reward,
                 'reach_distance': reach_distance,
+                'reach_success': reach_success,
                 'push_reward': push_reward,
                 'push_distance': push_distance,
+                'push_success': push_success,
                 'goal_distance': push_distance,
                 'success': success,
             }
@@ -458,6 +496,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             #     if 32 in (x.geom1, x.geom2) and 37 in (x.geom1, x.geom2)
             # ]
             reach_reward, reach_distance = reachReward()
+            reach_success = reach_distance < 0.1
             # pick_reward = orig_pickReward()
             place_reward , place_distance = placeReward()
             # assert 0 <= place_reward and 0 <= pick_reward
@@ -479,9 +518,12 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 'reward': reward,
                 'reach_reward': reach_reward,
                 'reach_distance': reach_distance,
+                'reach_success': reach_success,
                 'pick_reward': pick_reward,
+                'pick_success': pick_success,
                 'place_reward': place_reward,
                 'place_distance': place_distance,
+                'place_success': success,
                 'goal_distance': goal_distance,
                 'success': success,
             }
