@@ -134,17 +134,15 @@ class SawyerDrawerOpenEnv(SawyerXYZEnv):
         pull_success = pull_distance <= 6e-2
 
         max_reach_reward = max_reach_distance
-        max_pull_reward = max_pull_distance
 
         reach_reward = (
             max_reach_reward
             if pull_success
             else (max_reach_distance - reach_distance) / max_reach_distance)
 
-        pull_reward = (
-            max_pull_reward
-            if pull_success
-            else (max_pull_distance - pull_distance) / max_pull_distance)
+        pull_reward_weight = 5.0
+        pull_reward = pull_reward_weight * (
+            max_pull_distance - pull_distance) / max_pull_distance
 
         reward = reach_reward + pull_reward
         success = pull_success
