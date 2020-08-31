@@ -167,7 +167,6 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 reach_goal - gripper_center_of_mass, ord=2)
             max_reach_distance = self.max_reach_distance
 
-            epsilon = 1e-2
             max_reach_distance = self.max_reach_distance
             reach_distance = np.linalg.norm(gripper_center_of_mass - goal)
 
@@ -180,7 +179,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 'reward': reward,
                 'reach_reward': reach_reward,
                 'reach_distance': reach_distance,
-                'goal_distance': goal_distance,
+                'goal_distance': reach_distance,
                 'success': success,
             }
             return result
@@ -188,57 +187,45 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         def compute_reward_push(actions, observation):
             assert np.all(goal == self._get_site_pos('goal_push'))
 
-            def reachReward():
-                epsilon = 1e-2
-                max_reach_distance = self.max_reach_distance
-                reach_distance = np.linalg.norm(object_position - gripper_center_of_mass)
-                reach_distance_xy = np.linalg.norm(object_position[:-1] - gripper_center_of_mass[:-1])
-                z_distance_from_reset = np.linalg.norm(
-                    gripper_center_of_mass[-1] - self.init_fingerCOM[-1])
-                reach_reward = (
-                    - np.log(reach_distance + epsilon)
-                    + np.log(max_reach_distance + epsilon))
+            object_position = observation['state_observation'][3:6]
 
-                reward_bounds = [0.0, - np.log(epsilon)]
+            gripper_center_of_mass = self.gripper_center_of_mass
+            push_goal = self._target_pos
 
-                if reach_distance < 5e-2:
-                    reward = reach_reward + max(actions[-1], 0) / 25
-                elif 5e-2 < reach_distance_xy:
-                    reward = reach_reward + z_distance_from_reset
+            reach_distance = np.linalg.norm(
+                object_position - gripper_center_of_mass, ord=2)
+            max_reach_distance = self.max_reach_distance
+            reach_success = reach_distance < 5e-2
 
-                return reach_reward, reach_distance
+            push_distance = np.linalg.norm(
+                object_position[:2] - push_goal[:2], ord=2)
+            max_push_distance = self.max_push_distance
+            push_success = push_distance <= 7e-2
 
-            push_distance = np.linalg.norm(object_position[:2] - goal[:2])
-            reach_reward, reach_distance = reachReward()
+            max_reach_reward = max_reach_distance
+            max_push_reward = max_push_distance
 
-            reach_success = reach_distance < 5e-2 
+            reach_reward = (
+                max_reach_reward
+                if push_success
+                else (max_reach_distance - reach_distance) / max_reach_distance)
 
-            if reach_success:
-                epsilon = 1e-2
-                max_push_distance = self.max_push_distance
-
-                push_reward_weight = (1 / max_push_distance) * 5.0
-                push_reward = push_reward_weight * (
-                    max_push_distance - push_distance)
-            else:
-                push_reward = 0.0
+            push_reward = (
+                max_push_reward
+                if push_success
+                else (max_push_distance - push_distance) / max_push_distance)
 
             reward = reach_reward + push_reward
-            # print({
-            #     'reward': round(reward, 2),
-            #     'reach_rew': round(reach_reward, 2),
-            #     'push_rew': round(push_reward, 2),
-            #     'reach_dist': round(reach_distance, 2),
-            #     'push_dist': round(push_distance, 2),
-            # })
-            goal_distance = push_distance
-            success = push_distance <= 7e-2
+            success = push_success
+
             result = {
                 'reward': reward,
                 'reach_reward': reach_reward,
                 'reach_distance': reach_distance,
                 'push_reward': push_reward,
-                'push_distance': push_distance
+                'push_distance': push_distance,
+                'goal_distance': push_distance,
+                'success': success,
             }
             return result
 
