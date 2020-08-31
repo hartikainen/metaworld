@@ -72,6 +72,24 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
         return gripper_center_of_mass
 
+    def _visualize_success(self, info):
+        if self.task_type in ('pick_place', 'push'):
+            self.model.geom_rgba[self.model.geom_name2id('objGeom')] = (
+                [0, 1, 0, 1]
+                if info['success']
+                else [1, 0, 0, 1])
+        elif self.task_type == 'reach':
+            color = (
+                [0, 1, 0, 1] if info['success'] else [1, 0, 0, 1])
+            self.model.site_rgba[
+                self.model.site_name2id('leftEndEffector')
+            ] = color
+            self.model.site_rgba[
+                self.model.site_name2id('rightEndEffector')
+            ] = color
+        else:
+            raise ValueError(self.task_type)
+
     @_assert_task_is_set
     def step(self, action):
         ob = super().step(action)
@@ -85,6 +103,8 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         terminal = False
 
         self.curr_path_length +=1
+
+        self._visualize_success(info)
 
         return ob, reward, terminal, info
 
@@ -176,7 +196,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             success = reach_distance <= 5e-2
 
             result = {
-                'reward': reward,
+                'reward': reach_reward,
                 'reach_reward': reach_reward,
                 'reach_distance': reach_distance,
                 'goal_distance': reach_distance,
