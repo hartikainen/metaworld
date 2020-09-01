@@ -1,5 +1,6 @@
 import numpy as np
 from gym.spaces import Box
+from scipy.spatial.transform import Rotation
 
 from metaworld.envs.env_util import get_asset_full_path
 from metaworld.envs.mujoco.sawyer_xyz.sawyer_xyz_env import SawyerXYZEnv, _assert_task_is_set
@@ -159,8 +160,12 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             for t in self.task_types
         ]
 
-    def _get_pos_objects(self):
-        return self.data.get_geom_xpos('objGeom')
+    def _get_object_position_orientation_velocity(self):
+        position = self.data.get_geom_xpos('objGeom').copy()
+        orientation = Rotation.from_matrix(
+            self.data.get_geom_xmat('objGeom')).as_quat()
+        velocity = self.data.get_geom_xvelp('objGeom').copy()
+        return position, orientation, velocity
 
     def adjust_initObjPos(self, orig_init_pos):
         # This is to account for meshes for the geom and object are not aligned
@@ -289,7 +294,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         def compute_reward_push(actions, observation):
             del actions
 
-            object_position = observation['state_observation'][3:6]
+            object_position = observation['state_observation'][10:13]
 
             gripper_center_of_mass = self.gripper_center_of_mass
             push_goal = self._target_pos
@@ -338,7 +343,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             return result
 
         def compute_reward_pick_place(actions, observation):
-            object_position = observation['state_observation'][3:6]
+            object_position = observation['state_observation'][10:13]
 
             gripper_center_of_mass = self.gripper_center_of_mass
             place_goal = self._target_pos

@@ -2,10 +2,10 @@ import abc
 import copy
 import pickle
 
-from gym.spaces import Box
-from gym.spaces import Discrete
+from gym.spaces import Box, Discrete
 import mujoco_py
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from metaworld.envs.mujoco.mujoco_env import MujocoEnv, _assert_task_is_set
 
@@ -22,8 +22,12 @@ class SawyerMocapBase(MujocoEnv, metaclass=abc.ABCMeta):
         MujocoEnv.__init__(self, model_name, frame_skip=frame_skip)
         self.reset_mocap_welds()
 
-    def get_endeff_pos(self):
-        return self.data.get_body_xpos('hand').copy()
+    def get_endeffector_position_and_orientation(self):
+        position = self.data.get_body_xpos('hand').copy()
+        orientation = Rotation.from_matrix(
+            self.data.get_body_xmat('hand').copy()).as_quat()
+        velocity = self.data.get_body_xvelp('hand').copy()
+        return position, orientation, velocity
 
     def get_env_state(self):
         joint_state = self.sim.get_state()
@@ -67,8 +71,8 @@ class SawyerMocapBase(MujocoEnv, metaclass=abc.ABCMeta):
 
 class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
     _HAND_SPACE = Box(
-        np.array([-0.525, .35, -.0525]),
-        np.array([+0.525, 1.025, .525])
+        np.array([-0.525, .35, -.0525] + [-1] * 4 + [-np.inf] * 3),
+        np.array([+0.525, 1.025, .525] + [+1] * 4 + [+np.inf] * 3)
     )
     max_path_length = 200
 
@@ -212,7 +216,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         """
         return [('goal', self._target_pos)]
 
-    def _get_pos_objects(self):
+    def _get_object_position_orientation_velocity(self):
         """Retrieves object position(s) from mujoco properties or instance vars
 
         Returns:
@@ -240,18 +244,35 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         Returns:
             np.ndarray: The flat observation array (12 elements)
         """
-        pos_hand = self.get_endeff_pos()
+        (hand_position,
+         hand_orientation,
+         hand_velocity,
+         ) = self.get_endeffector_position_and_orientation()
 
-        pos_obj_padded = np.zeros(self._pos_obj_max_len)
-        pos_obj = self._get_pos_objects()
-        assert len(pos_obj) in self._pos_obj_possible_lens
-        pos_obj_padded[:len(pos_obj)] = pos_obj
+        (object_position,
+         object_orientation,
+         object_velocity,
+         ) = self._get_object_position_orientation_velocity()
+        assert len(object_position) in self._pos_obj_possible_lens
+        # NOTE(hartikainen): All my changes brake with `len(pos_obj) != 3`
+        assert len(object_position) == 3, object_position
+        object_position_padded = np.zeros(self._pos_obj_max_len)
+        object_position_padded[:len(object_position)] = object_position
 
         pos_goal = self._get_pos_goal()
         if self._partially_observable:
             pos_goal = np.zeros_like(pos_goal)
 
-        return np.hstack((pos_hand, pos_obj_padded, pos_goal))
+        observation = np.hstack((
+            hand_position,
+            hand_orientation,
+            hand_velocity,
+            object_position_padded,
+            object_orientation,
+            object_velocity,
+            pos_goal))
+
+        return observation
 
     def _get_obs_dict(self):
         obs = self._get_obs()
@@ -263,15 +284,31 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
 
     @property
     def observation_space(self):
-        obj_low = np.full(6, -np.inf)
-        obj_high = np.full(6, +np.inf)
+        object_position_low = np.full(6, -np.inf)
+        object_position_high = np.full(6, +np.inf)
+        object_orientation_low = np.full(4, -1.0)
+        object_orientation_high = np.full(4, +1.0)
+        object_velocity_low = np.full(3, -np.inf)
+        object_velocity_high = np.full(3, +np.inf)
         goal_low = np.zeros(3) if self._partially_observable \
             else self.goal_space.low
         goal_high = np.zeros(3) if self._partially_observable \
             else self.goal_space.high
         return Box(
-            np.hstack((self._HAND_SPACE.low, obj_low, goal_low)),
-            np.hstack((self._HAND_SPACE.high, obj_high, goal_high))
+            np.hstack((
+                self._HAND_SPACE.low,
+                object_position_low,
+                object_orientation_low,
+                object_velocity_low,
+                goal_low,
+            )),
+            np.hstack((
+                self._HAND_SPACE.high,
+                object_position_high,
+                object_orientation_high,
+                object_velocity_high,
+                goal_high,
+            ))
         )
 
     @_assert_task_is_set
