@@ -154,8 +154,8 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
         pull_reward = scaled_negative_log_reward(
             pull_distance,
             max_pull_distance,
-            reward_scale=2.0,
-            epsilon=1e-2)
+            reward_scale=5.0,
+            epsilon=1e-3)
 
         reward = reach_reward + pull_reward
         success = pull_success
