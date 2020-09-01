@@ -169,7 +169,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         self.obj_init_pos = self.adjust_initObjPos(self.init_config['obj_init_pos'])
         self.obj_init_angle = self.init_config['obj_init_angle']
         self.object_height = self.data.get_geom_xpos('objGeom')[2]
-        self.height_target = self.object_height + self.lift_threshold
+        self.pick_height_target = self.object_height + self.lift_threshold
 
         if self.random_init:
             goal_pos = self._get_state_rand_vec()
@@ -192,9 +192,9 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             self.obj_init_pos[:2] - np.array(self._target_pos)[:2],
             ord=2)
         self.max_place_distance = np.linalg.norm((
-            np.array([*self.obj_init_pos[:2], self.height_target])
+            np.array([*self.obj_init_pos[:2], self.object_height])
             - np.array(self._target_pos)
-        ), ord=2) + self.height_target
+        ), ord=2)
 
         self.num_resets += 1
 
@@ -204,17 +204,57 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         super()._reset_hand(10)
         self.init_fingerCOM = self.gripper_center_of_mass
 
+    @property
+    def touching_object(self):
+        object_geom_id = self.unwrapped.model.geom_name2id('objGeom')
+        leftpad_geom_id = self.unwrapped.model.geom_name2id('leftpad_geom')
+        rightpad_geom_id = self.unwrapped.model.geom_name2id('rightpad_geom')
+
+        leftpad_object_contacts = [
+            x for x in self.unwrapped.data.contact
+            if (leftpad_geom_id in (x.geom1, x.geom2)
+                and object_geom_id in (x.geom1, x.geom2))
+        ]
+
+        rightpad_object_contacts = [
+            x for x in self.unwrapped.data.contact
+            if (rightpad_geom_id in (x.geom1, x.geom2)
+                and object_geom_id in (x.geom1, x.geom2))
+        ]
+
+        leftpad_object_contact_force = sum(
+            self.unwrapped.data.efc_force[x.efc_address]
+            for x in leftpad_object_contacts)
+
+        rightpad_object_contact_force = sum(
+            self.unwrapped.data.efc_force[x.efc_address]
+            for x in rightpad_object_contacts)
+
+        gripping = (0 < leftpad_object_contact_force
+                    and 0 < rightpad_object_contact_force)
+
+        return gripping
+
+    @property
+    def object_in_air(self):
+        object_geom_id = self.unwrapped.model.geom_name2id('objGeom')
+        table_top_geom_id = self.unwrapped.model.geom_name2id('tableTop')
+        table_top_object_contacts = [
+            x for x in self.unwrapped.data.contact
+            if (table_top_geom_id in (x.geom1, x.geom2)
+                and object_geom_id in (x.geom1, x.geom2))
+        ]
+
+        object_in_air = not table_top_object_contacts
+
+        return object_in_air
+
     def compute_reward(self, actions, observation):
-        object_position = observation['state_observation'][3:6]
-
-        gripper_center_of_mass = self.gripper_center_of_mass
-
-        height_target = self.height_target
-        goal = self._target_pos
-
         def compute_reward_reach(actions, observation):
             del actions
             del observation
+
+            gripper_center_of_mass = self.gripper_center_of_mass
 
             reach_goal = self._target_pos
 
@@ -239,12 +279,13 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             return result
 
         def compute_reward_push(actions, observation):
-            assert np.all(goal == self._get_site_pos('goal_push'))
+            del actions
 
             object_position = observation['state_observation'][3:6]
 
             gripper_center_of_mass = self.gripper_center_of_mass
             push_goal = self._target_pos
+            assert np.all(push_goal == self._get_site_pos('goal_push'))
 
             reach_distance = np.linalg.norm(
                 object_position - gripper_center_of_mass, ord=2)
@@ -286,201 +327,46 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             return result
 
         def compute_reward_pick_place(actions, observation):
-            del observation
+            object_position = observation['state_observation'][3:6]
 
-            reach_distance = reachDist = np.linalg.norm(object_position - gripper_center_of_mass)
-            
-            place_distance = placingDist = np.linalg.norm(object_position - goal)
-            assert np.all(goal == self._get_site_pos('goal_pick_place'))
+            gripper_center_of_mass = self.gripper_center_of_mass
+            place_goal = self._target_pos
+            assert np.all(place_goal == self._get_site_pos('goal_pick_place'))
+            pick_height_target = self.pick_height_target
 
-            def reachReward():
-                epsilon = 1e-2
-                max_reach_distance = self.max_reach_distance
-                reach_distance_xy = np.linalg.norm(object_position[:-1] - gripper_center_of_mass[:-1])
-                z_distance_from_reset = np.linalg.norm(
-                    gripper_center_of_mass[-1] - self.init_fingerCOM[-1])
-                reach_reward = (
-                    - np.log(reach_distance + epsilon)
-                    + np.log(max_reach_distance + epsilon))
+            reach_distance = np.linalg.norm(
+                object_position - gripper_center_of_mass, ord=2)
+            max_reach_distance = self.max_reach_distance
+            reach_success = reach_distance < 1e-1
 
-                reward_bounds = [0.0, - np.log(epsilon)]
+            place_distance = np.linalg.norm(object_position - place_goal, ord=2)
+            max_place_distance = self.max_place_distance
+            place_success = place_distance <= 7e-2
 
-                if reach_distance < 5e-2:
-                    reward = reach_reward + max(actions[-1], 0) / 25
-                elif 5e-2 < reach_distance_xy:
-                    reward = reach_reward + z_distance_from_reset
+            reach_reward_weight = 1.0
+            max_reach_reward = reach_reward_weight
 
-                return reach_reward, reach_distance
+            reach_reward = (
+                max_reach_reward
+                if place_success
+                else (reach_reward_weight
+                      * (max_reach_distance - reach_distance)
+                      / max_reach_distance))
 
-            def compute_pick_reward():
-                object_geom_id = self.unwrapped.model.geom_name2id('objGeom')
-                table_top_geom_id = self.unwrapped.model.geom_name2id('tableTop')
-                leftpad_geom_id = self.unwrapped.model.geom_name2id('leftpad_geom')
-                rightpad_geom_id = self.unwrapped.model.geom_name2id('rightpad_geom')
+            touching_object = self.touching_object
+            object_in_air = self.object_in_air
 
-                table_top_object_contacts = [
-                    x for x in self.unwrapped.data.contact
-                    if (table_top_geom_id in (x.geom1, x.geom2)
-                        and object_geom_id in (x.geom1, x.geom2))
-                ]
+            pick_success = touching_object and object_in_air
+            pick_reward_weight = 1.0
+            pick_reward = (
+                float(reach_success) * max(actions[-1], 0.0) / 10
+                + pick_reward_weight * float(pick_success))
 
-                leftpad_object_contacts = [
-                    x for x in self.unwrapped.data.contact
-                    if (leftpad_geom_id in (x.geom1, x.geom2)
-                        and object_geom_id in (x.geom1, x.geom2))
-                ]
-        
-                rightpad_object_contacts = [
-                    x for x in self.unwrapped.data.contact
-                    if (rightpad_geom_id in (x.geom1, x.geom2)
-                        and object_geom_id in (x.geom1, x.geom2))
-                ]
-        
-                leftpad_object_contact_force = sum(
-                    self.unwrapped.data.efc_force[x.efc_address]
-                    for x in leftpad_object_contacts)
-        
-                rightpad_object_contact_force = sum(
-                    self.unwrapped.data.efc_force[x.efc_address]
-                    for x in rightpad_object_contacts)
-
-                gripping = (0 < leftpad_object_contact_force
-                            and 0 < rightpad_object_contact_force)
-
-                object_in_air = not table_top_object_contacts
-                # pick_reward = float(gripping) * (1.0 + object_position[2])
-                pick_reward_weight = (1 / self.lift_threshold)
-                # pick_reward = (
-                #     float(gripping)
-                #     * float(object_in_air)
-                #     * (1.0 - abs(self.height_target - object_position[2])))
-                pick_success = gripping and object_in_air
-                pick_reward = float(pick_success)
-                # if (0 < leftpad_object_contact_force
-                #     and 0 < rightpad_object_contact_force):
-                #     total_gripper_object_contact_force = (
-                #         leftpad_object_contact_force
-                #         + rightpad_object_contact_force)
-                #     target_contact_force = 800
-    
-                #     pick_reward_weight = 1e-2
-                #     contact_force_reward = pick_reward_weight * min(
-                #         total_gripper_object_contact_force, 500)
-                # else:
-                #     contact_force_reward = 0.0
-                    
-                # if not table_top_object_contacts:
-                #     leftpad_object_contacts = [
-                #         x for x in self.unwrapped.data.contact
-                #         if (leftpad_geom_id in (x.geom1, x.geom2)
-                #             and object_geom_id in (x.geom1, x.geom2))
-                #     ]
-        
-                #     rightpad_object_contacts = [
-                #         x for x in self.unwrapped.data.contact
-                #         if (rightpad_geom_id in (x.geom1, x.geom2)
-                #             and object_geom_id in (x.geom1, x.geom2))
-                #     ]
-        
-                #     leftpad_object_contact_force = sum(
-                #         self.unwrapped.data.efc_force[x.efc_address3]
-                #         for x in leftpad_object_contacts)
-        
-                #     rightpad_object_contact_force = sum(
-                #         self.unwrapped.data.efc_force[x.efc_address]
-                #         for x in rightpad_object_contacts)
-                    
-                #     # print({
-                #     #     'len(left_contacts)': len(leftpad_object_contacts),
-                #     #     'len(right_contacts)': len(rightpad_object_contacts),
-                #     #     'left-contacts': [round(self.unwrapped.data.efc_force[x.efc_address], 2)
-                #     #              for x in leftpad_object_contacts],
-                #     #     'right-contacts': [round(self.unwrapped.data.efc_force[x.efc_address], 2)
-                #     #              for x in rightpad_object_contacts],
-                #     #     'left': leftpad_object_contact_force,
-                #     #     'right': rightpad_object_contact_force,
-                #     # })
-        
-                #     if (0 < leftpad_object_contact_force
-                #         and 0 < rightpad_object_contact_force):
-                #         total_gripper_object_contact_force = (
-                #             leftpad_object_contact_force
-                #             + rightpad_object_contact_force)
-                #         target_contact_force = 800
-    
-                #         pick_reward_weight = 1e-2
-                #         contact_force_reward = pick_reward_weight * min(
-                #             total_gripper_object_contact_force, 500)
-                #     else:
-                #         contact_force_reward = 0.0
-                # else:
-                #     contact_force_reward = 0.0
-
-                return pick_reward, pick_success
-
-            pick_reward, pick_success = compute_pick_reward()
-            # pick_success = 0.0 < pick_reward 
-
-            # def objDropped():
-            #     return (object_position[2] < (self.object_height + 0.005)
-            #             and 2e-2 < placingDist
-            #             and 2e-2 < reachDist)
-            #     # Object on the ground, far away from the goal, and from the gripper
-            #     # Can tweak the margin limits
-
-            def orig_pickReward():
-                # height_target = self.height_target = self.object_height + self.lift_threshold
-                hScale = 100
-                if pick_success:
-                    return hScale * height_target
-                elif reachDist < 0.1 and (self.object_height + 0.005) < object_position[2]:
-                    # objectDropped() or not self.pickCompleted
-                    return hScale * min(height_target, object_position[2])
-                else:
-                    return 0
-
-            def placeReward():
-                cond = pick_success and reach_distance < 0.1
-                if cond:
-                    epsilon = 1e-2
-                    max_place_distance = self.max_place_distance
-
-                    place_reward_weight = (1 / max_place_distance) * 5.0
-                    place_reward = place_reward_weight * (
-                        max_place_distance - place_distance)
-                    # place_reward = place_reward_weight * (
-                    #     - np.log(place_distance + epsilon)
-                    #     + np.log(max_place_distance + epsilon))
-                else:
-                    place_reward = 0.0
-
-                # print({
-                #     'pick_success': pick_success,
-                #     'reachDist': round(reach_distance, 2),
-                #     'cond': cond,
-                #     'place_distance': round(place_distance, 2),
-                #     'place_reward': round(place_reward, 2),
-                # })
-
-                return place_reward, place_distance
-
-            # self.unwrapped.model.geom_name2id('leftpad_geom')
-            #
-            #
-            # if 145 < self.curr_path_length:
-            #     breakpoint()
-
-            # grasp_contacts = [
-            #     x for x in self.unwrapped.data.contact
-            #     if 32 in (x.geom1, x.geom2) and 37 in (x.geom1, x.geom2)
-            # ]
-            reach_reward, reach_distance = reachReward()
-            reach_success = reach_distance < 0.1
-            # pick_reward = orig_pickReward()
-            place_reward , place_distance = placeReward()
-            # assert 0 <= place_reward and 0 <= pick_reward
-            # assert 0 <= pick_reward, pick_reward
+            place_reward_weight = 5.0
+            place_reward = place_reward_weight * (
+                max_place_distance - place_distance) / max_place_distance
             reward = reach_reward + pick_reward + place_reward
+            success = place_success
 
             # print({
             #     'reward': round(reward, 2),
@@ -490,7 +376,6 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             #     'reach_dist': round(reach_distance, 2),
             #     'placing_dist': round(place_distance, 2),
             # })
-            success = place_distance <= 0.07
             goal_distance = place_distance
 
             result = {
