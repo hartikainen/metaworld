@@ -1,5 +1,6 @@
 import numpy as np
 from gym.spaces import Box
+from scipy.spatial.transform import Rotation
 
 from metaworld.envs.env_util import get_asset_full_path
 from metaworld.envs.mujoco.sawyer_xyz.base import SawyerXYZEnv, _assert_task_is_set
@@ -75,9 +76,12 @@ class SawyerDoorEnv(SawyerXYZEnv):
 
         return ob, reward, terminal, info
 
-
-    def _get_pos_objects(self):
-        return self.data.get_geom_xpos('handle').copy()
+    def _get_object_position_orientation_velocity(self):
+        position = self.data.get_geom_xpos('handle').copy()
+        orientation = Rotation.from_matrix(
+            self.data.get_geom_xmat('handle')).as_quat()
+        velocity = self.data.get_geom_xvelp('handle').copy()
+        return position, orientation, velocity
 
     def _set_goal_marker(self, goal):
         self.data.site_xpos[self.model.site_name2id('goal')] = (
@@ -126,7 +130,7 @@ class SawyerDoorEnv(SawyerXYZEnv):
     def compute_reward(self, actions, observation):
         del actions
 
-        object_position = observation['state_observation'][3:6]
+        object_position = observation['state_observation'][10:13]
 
         gripper_center_of_mass = self.gripper_center_of_mass
         pull_goal = self._state_goal
