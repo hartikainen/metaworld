@@ -99,18 +99,25 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
         if self.task_type == 'pick_place':
             info_keys = (
                 'reach_distance',
+                'place_distance',
                 'reach_success',
                 'pick_success',
-                'place_distance',
-                'place_success')
+                'place_success',
+                'reach_reward',
+                'pick_reward',
+                'place_reward',
+                'reward')
         elif self.task_type == 'push':
             info_keys = (
                 'reach_distance',
-                'reach_success',
                 'push_distance',
-                'push_success')
+                'reach_success',
+                'push_success',
+                'reach_reward',
+                'push_reward',
+                'reward')
         elif self.task_type == 'reach':
-            info_keys = ('reach_distance', 'reach_success')
+            info_keys = ('reach_distance', 'reach_success', 'reach_reward')
         else:
             raise ValueError(self.task_type)
 
@@ -368,14 +375,6 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             reward = reach_reward + pick_reward + place_reward
             success = place_success
 
-            # print({
-            #     'reward': round(reward, 2),
-            #     'reach_rew': round(reach_reward, 2),
-            #     'pick_rew': round(pick_reward, 2),
-            #     'place_rew': round(place_reward, 2),
-            #     'reach_dist': round(reach_distance, 2),
-            #     'placing_dist': round(place_distance, 2),
-            # })
             goal_distance = place_distance
 
             result = {
