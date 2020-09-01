@@ -3,6 +3,7 @@ from gym.spaces import Box
 
 from metaworld.envs.env_util import get_asset_full_path
 from metaworld.envs.mujoco.sawyer_xyz.base import SawyerXYZEnv, _assert_task_is_set
+from metaworld.envs.utils import scaled_negative_log_reward
 
 
 class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
@@ -337,7 +338,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 push_distance,
                 max_push_distance,
                 reward_scale=2.0,
-                epsilon=1e-1)
+                epsilon=1e-2)
 
             reward = reach_reward + push_reward
             success = push_success
@@ -391,9 +392,12 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 float(reach_success) * max(actions[-1], 0.0) / 10
                 + pick_reward_weight * float(pick_success))
 
-            place_reward_weight = 5.0
-            place_reward = place_reward_weight * (
-                max_place_distance - place_distance) / max_place_distance
+            place_reward = scaled_negative_log_reward(
+                place_distance,
+                max_place_distance,
+                reward_scale=4.0,
+                epsilon=1e-2)
+
             reward = reach_reward + pick_reward + place_reward
             success = place_success
 

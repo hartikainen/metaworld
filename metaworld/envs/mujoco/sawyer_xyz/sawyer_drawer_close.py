@@ -3,6 +3,7 @@ from gym.spaces import Box
 
 from metaworld.envs.env_util import get_asset_full_path
 from metaworld.envs.mujoco.sawyer_xyz.base import SawyerXYZEnv, _assert_task_is_set
+from metaworld.envs.utils import scaled_negative_log_reward
 
 
 class SawyerDrawerCloseEnv(SawyerXYZEnv):
@@ -145,9 +146,11 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
                   * (max_reach_distance - reach_distance)
                   / max_reach_distance))
 
-        pull_reward_weight = 5.0
-        pull_reward = pull_reward_weight * (
-            max_pull_distance - pull_distance) / max_pull_distance
+        pull_reward = scaled_negative_log_reward(
+            pull_distance,
+            max_pull_distance,
+            reward_scale=2.0,
+            epsilon=1e-2)
 
         reward = reach_reward + pull_reward
         success = pull_success
