@@ -121,12 +121,15 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
         max_pull_distance = self.max_pull_distance
         pull_success = pull_distance <= 6e-2
 
-        max_reach_reward = max_reach_distance
+        reach_reward_weight = 1.0
+        max_reach_reward = reach_reward_weight
 
         reach_reward = (
             max_reach_reward
             if pull_success
-            else (max_reach_distance - reach_distance) / max_reach_distance)
+            else (reach_reward_weight
+                  * (max_reach_distance - reach_distance)
+                  / max_reach_distance))
 
         pull_reward_weight = 5.0
         pull_reward = pull_reward_weight * (
@@ -135,7 +138,7 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
         reward = reach_reward + pull_reward
         success = pull_success
 
-        return {
+        result = {
             'reward': reward,
             'reach_distance': reach_distance,
             'reach_reward': reach_reward,
@@ -145,6 +148,7 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
             'pull_success': pull_success,
             'success': success,
         }
+        return result
 
     def viewer_setup(self):
         self.viewer.cam.trackbodyid = -1
