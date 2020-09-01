@@ -140,12 +140,15 @@ class SawyerDoorEnv(SawyerXYZEnv):
         max_pull_distance = self.max_pull_distance
         pull_success = pull_distance <= 8e-2
 
-        max_reach_reward = max_reach_distance
+        reach_reward_weight = 1.0
+        max_reach_reward = reach_reward_weight
 
         reach_reward = (
             max_reach_reward
             if pull_success
-            else (max_reach_distance - reach_distance) / max_reach_distance)
+            else (reach_reward_weight
+                  * (max_reach_distance - reach_distance)
+                  / max_reach_distance))
 
         pull_reward_weight = 5.0
         pull_reward = pull_reward_weight * (
