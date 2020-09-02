@@ -70,8 +70,6 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
     def _get_pos_objects(self):
         return self.get_body_com('peg')
 
-
-
     def reset_model(self):
         self._reset_hand()
 
