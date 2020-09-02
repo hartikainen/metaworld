@@ -4,6 +4,7 @@ from scipy.spatial.transform import Rotation
 
 from metaworld.envs.env_util import get_asset_full_path
 from metaworld.envs.mujoco.sawyer_xyz.sawyer_xyz_env import SawyerXYZEnv, _assert_task_is_set
+from metaworld.envs.utils import scaled_negative_log_reward
 
 
 class SawyerPegInsertionSideEnv(SawyerXYZEnv):
@@ -197,19 +198,15 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
         gripper_center_of_mass = self.gripper_center_of_mass
         place_goal = self._target_pos
         pick_height_target = self.pick_height_target
-        peg_head_position = self._get_site_pos('pegHead')
 
         reach_distance = np.linalg.norm(
             object_position - gripper_center_of_mass, ord=2)
         max_reach_distance = self.max_reach_distance
         reach_success = reach_distance < 1e-1
 
-        place_head_distance = np.linalg.norm(
-            peg_head_position - place_goal, ord=2)
         place_distance = np.linalg.norm(object_position - place_goal, ord=2)
         max_place_distance = self.max_place_distance
         place_success = place_distance <= 7e-2
-        place_head_success = place_head_distance <= 1e-2
 
         reach_reward_weight = 1.0
         max_reach_reward = reach_reward_weight
@@ -230,14 +227,13 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
             float(reach_success) * max(actions[-1], 0.0) / 10
             + pick_reward_weight * float(pick_success))
 
-        place_reward_weight = 2.0
-        place_distance_value = (
-            place_distance
-            if place_head_success
-            else place_head_distance)
-        place_reward = float(object_in_air) * place_reward_weight * (
-            max_place_distance - place_distance_value
-        ) / max_place_distance
+        place_reward_weight = 5.0
+        place_distance_value = place_distance
+        place_reward = scaled_negative_log_reward(
+            place_distance_value,
+            max_place_distance,
+            reward_scale=float(object_in_air) * place_reward_weight,
+            epsilon=1e-2)
 
         reward = reach_reward + pick_reward + place_reward
         success = place_success
