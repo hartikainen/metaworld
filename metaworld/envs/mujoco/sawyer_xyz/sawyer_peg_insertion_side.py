@@ -1,5 +1,6 @@
 import numpy as np
 from gym.spaces import Box
+from scipy.spatial.transform import Rotation
 
 from metaworld.envs.env_util import get_asset_full_path
 from metaworld.envs.mujoco.sawyer_xyz.base import SawyerXYZEnv, _assert_task_is_set
@@ -9,7 +10,7 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
 
     def __init__(self):
 
-        liftThresh = 0.11
+        lift_threshold = 0.11
         hand_init_pos = (0, 0.6, 0.2)
         hand_low = (-0.5, 0.40, 0.05)
         hand_high = (0.5, 1, 0.5)
@@ -36,7 +37,7 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
         goal_low = self.hand_low
         goal_high = self.hand_high
 
-        self.liftThresh = liftThresh
+        self.lift_threshold = lift_threshold
         self.max_path_length = 150
 
         self.hand_init_pos = np.array(hand_init_pos)
@@ -51,6 +52,13 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
     def model_name(self):
         return get_asset_full_path('sawyer_xyz/sawyer_peg_insertion_side.xml')
 
+    @property
+    def gripper_center_of_mass(self):
+        right_finger_pos = self.get_site_pos('rightEndEffector')
+        left_finger_pos = self.get_site_pos('leftEndEffector')
+        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
+        return gripper_center_of_mass
+
     @_assert_task_is_set
     def step(self, action):
         self.set_xyz_action(action[:3])
@@ -58,16 +66,24 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
         # The marker seems to get reset every time you do a simulation
         ob = self._get_obs()
         obs_dict = self._get_obs_dict()
-        reward, _, reachDist, pickRew, _, placingDist = self.compute_reward(action, obs_dict)
-        self.curr_path_length += 1
+        reward_info = self.compute_reward(action, obs_dict)
+        reward = reward_info['reward']
+        info = {
+            **reward_info,
+            'goal': self.goal,
+        }
+        terminal = False
 
-        info = {'reachDist': reachDist, 'pickRew':pickRew, 'epRew' : reward, 'goalDist': placingDist, 'success': float(placingDist <= 0.07)}
-        info['goal'] = self.goal
+        self.curr_path_length +=1
 
-        return ob, reward, False, info
+        return ob, reward, terminal, info
 
-    def _get_pos_objects(self):
-        return self.get_body_com('peg')
+    def _get_object_position_orientation_velocity(self):
+        position = self.data.get_geom_xpos('peg').copy()
+        orientation = Rotation.from_matrix(
+            self.data.get_geom_xmat('peg')).as_quat()
+        velocity = self.data.get_geom_xvelp('peg').copy()
+        return position, orientation, velocity
 
     def _set_obj_xyz(self, pos):
         qpos = self.data.qpos.flat.copy()
@@ -83,7 +99,7 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
         self._state_goal = self.sim.model.site_pos[self.model.site_name2id('hole')] + self.sim.model.body_pos[self.model.body_name2id('box')]
         self.obj_init_pos = self.init_config['obj_init_pos']
         self.objHeight = self.get_body_com('peg').copy()[2]
-        self.heightTarget = self.objHeight + self.liftThresh
+        self.pick_height_target = self.objHeight + self.lift_threshold
 
         if self.random_init:
             goal_pos = self._get_state_rand_vec()
@@ -95,8 +111,12 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
 
         self._set_obj_xyz(self.obj_init_pos)
         self.obj_init_pos = self.get_body_com('peg')
-        self.maxPlacingDist = np.linalg.norm(np.array([self.obj_init_pos[0], self.obj_init_pos[1], self.heightTarget]) - np.array(self._state_goal)) + self.heightTarget
-        self.target_reward = 1000*self.maxPlacingDist + 1000*2
+        self.max_reach_distance = np.linalg.norm(
+            self.init_fingerCOM - self.obj_init_pos, ord=2)
+        self.max_place_distance = np.linalg.norm(
+            np.array([*self.obj_init_pos[:2], self.pick_height_target])
+            - np.array(self._state_goal)) + self.pick_height_target
+
         return self._get_obs()
 
     def _reset_hand(self):
@@ -105,85 +125,117 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
             self.data.set_mocap_quat('mocap', np.array([1, 0, 1, 0]))
             self.do_simulation([-1,1], self.frame_skip)
 
-        rightFinger, leftFinger = self.get_site_pos('rightEndEffector'), self.get_site_pos('leftEndEffector')
-        self.init_fingerCOM  =  (rightFinger + leftFinger)/2
-        self.pickCompleted = False
+        self.init_fingerCOM = self.gripper_center_of_mass
 
-    def compute_reward(self, actions, obs):
-        obs = obs['state_observation']
+    @property
+    def touching_object(self):
+        object_geom_id = self.unwrapped.model.geom_name2id('peg')
+        leftpad_geom_id = self.unwrapped.model.geom_name2id('leftpad_geom')
+        rightpad_geom_id = self.unwrapped.model.geom_name2id('rightpad_geom')
 
-        objPos = obs[3:6]
-        pegHeadPos = self.get_site_pos('pegHead')
+        leftpad_object_contacts = [
+            x for x in self.unwrapped.data.contact
+            if (leftpad_geom_id in (x.geom1, x.geom2)
+                and object_geom_id in (x.geom1, x.geom2))
+        ]
 
-        rightFinger, leftFinger = self.get_site_pos('rightEndEffector'), self.get_site_pos('leftEndEffector')
-        fingerCOM  =  (rightFinger + leftFinger)/2
+        rightpad_object_contacts = [
+            x for x in self.unwrapped.data.contact
+            if (rightpad_geom_id in (x.geom1, x.geom2)
+                and object_geom_id in (x.geom1, x.geom2))
+        ]
 
-        heightTarget = self.heightTarget
-        placingGoal = self._state_goal
+        leftpad_object_contact_force = sum(
+            self.unwrapped.data.efc_force[x.efc_address]
+            for x in leftpad_object_contacts)
 
-        reachDist = np.linalg.norm(objPos - fingerCOM)
+        rightpad_object_contact_force = sum(
+            self.unwrapped.data.efc_force[x.efc_address]
+            for x in rightpad_object_contacts)
 
-        placingDistHead = np.linalg.norm(pegHeadPos - placingGoal)
-        placingDist = np.linalg.norm(objPos - placingGoal)
+        gripping = (0 < leftpad_object_contact_force
+                    and 0 < rightpad_object_contact_force)
 
+        return gripping
 
-        def reachReward():
-            reachRew = -reachDist
-            reachDistxy = np.linalg.norm(objPos[:-1] - fingerCOM[:-1])
-            zRew = np.linalg.norm(fingerCOM[-1] - self.init_fingerCOM[-1])
+    @property
+    def object_in_air(self):
+        object_geom_id = self.unwrapped.model.geom_name2id('peg')
+        table_top_geom_id = self.unwrapped.model.geom_name2id('tableTop')
+        table_top_object_contacts = [
+            x for x in self.unwrapped.data.contact
+            if (table_top_geom_id in (x.geom1, x.geom2)
+                and object_geom_id in (x.geom1, x.geom2))
+        ]
 
-            if reachDistxy < 0.05:
-                reachRew = -reachDist
-            else:
-                reachRew =  -reachDistxy - zRew
+        object_in_air = not table_top_object_contacts
 
-            # incentive to close fingers when reachDist is small
-            if reachDist < 0.05:
-                reachRew = -reachDist + max(actions[-1],0)/50
+        return object_in_air
 
-            return reachRew, reachDist
+    def compute_reward(self, actions, observation):
+        object_position = observation['state_observation'][10:13]
 
-        def pickCompletionCriteria():
-            tolerance = 0.01
+        gripper_center_of_mass = self.gripper_center_of_mass
+        place_goal = self._state_goal
+        pick_height_target = self.pick_height_target
+        peg_head_position = self.get_site_pos('pegHead')
 
-            return objPos[2] >= (heightTarget- tolerance)
+        reach_distance = np.linalg.norm(
+            object_position - gripper_center_of_mass, ord=2)
+        max_reach_distance = self.max_reach_distance
+        reach_success = reach_distance < 1e-1
 
-        self.pickCompleted = pickCompletionCriteria()
+        place_head_distance = np.linalg.norm(
+            peg_head_position - place_goal, ord=2)
+        place_distance = np.linalg.norm(object_position - place_goal, ord=2)
+        max_place_distance = self.max_place_distance
+        place_success = place_distance <= 7e-2
+        place_head_success = place_head_distance <= 5e-2
 
-        def objDropped():
-            return (objPos[2] < (self.objHeight + 0.005)) and (placingDist >0.02) and (reachDist > 0.02)
-            # Object on the ground, far away from the goal, and from the gripper
-            # Can tweak the margin limits
+        reach_reward_weight = 1.0
+        max_reach_reward = reach_reward_weight
 
-        def orig_pickReward():
-            hScale = 100
-            if self.pickCompleted and not(objDropped()):
-                return hScale*heightTarget
-            elif (reachDist < 0.1) and (objPos[2]> (self.objHeight + 0.005)) :
-                return hScale* min(heightTarget, objPos[2])
-            else:
-                return 0
+        reach_reward = (
+            max_reach_reward
+            if place_success
+            else (reach_reward_weight
+                  * (max_reach_distance - reach_distance)
+                  / max_reach_distance))
 
-        def placeReward():
-            c1 = 1000
-            c2 = 0.01
-            c3 = 0.001
-            cond = self.pickCompleted and (reachDist < 0.1) and not(objDropped())
+        touching_object = self.touching_object
+        object_in_air = self.object_in_air
 
-            if cond:
-                if placingDistHead <= 0.05:
-                    placeRew = 1000*(self.maxPlacingDist - placingDist) + c1*(np.exp(-(placingDist**2)/c2) + np.exp(-(placingDist**2)/c3))
-                else:
-                    placeRew = 1000*(self.maxPlacingDist - placingDistHead) + c1*(np.exp(-(placingDistHead**2)/c2) + np.exp(-(placingDistHead**2)/c3))
-                placeRew = max(placeRew,0)
-                return [placeRew , placingDist]
-            else:
-                return [0 , placingDist]
+        pick_success = touching_object and object_in_air
+        pick_reward_weight = 1.0
+        pick_reward = (
+            float(reach_success) * max(actions[-1], 0.0) / 10
+            + pick_reward_weight * float(pick_success))
 
-        reachRew, reachDist = reachReward()
-        pickRew = orig_pickReward()
-        placeRew, placingDist = placeReward()
-        assert ((placeRew >=0) and (pickRew>=0))
-        reward = reachRew + pickRew + placeRew
+        place_reward_weight = 5.0
+        place_distance_value = (
+            place_distance
+            if place_head_success
+            else place_head_distance)
+        place_reward = place_reward_weight * (
+            max_place_distance - place_distance_value
+        ) / max_place_distance
 
-        return [reward, reachRew, reachDist, pickRew, placeRew, placingDist]
+        reward = reach_reward + pick_reward + place_reward
+        success = place_success
+
+        goal_distance = place_distance
+
+        result = {
+            'reward': reward,
+            'reach_reward': reach_reward,
+            'reach_distance': reach_distance,
+            'reach_success': reach_success,
+            'pick_reward': pick_reward,
+            'pick_success': pick_success,
+            'place_reward': place_reward,
+            'place_distance': place_distance,
+            'place_success': success,
+            'goal_distance': goal_distance,
+            'success': success,
+        }
+        return result
