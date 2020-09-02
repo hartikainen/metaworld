@@ -52,6 +52,46 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
     def model_name(self):
         return get_asset_full_path('sawyer_xyz/sawyer_peg_insertion_side.xml')
 
+    def _visualize_success(self, info):
+        reach_color = (
+            [0, 1, 0, 1] if info['reach_success'] else [1, 0, 0, 1])
+        self.model.site_rgba[
+            self.model.site_name2id('leftEndEffector')
+        ] = reach_color
+        self.model.site_rgba[
+            self.model.site_name2id('rightEndEffector')
+        ] = reach_color
+
+        self.model.geom_rgba[self.model.geom_name2id('peg')] = (
+            [0, 1, 0, 1]
+            if info['success']
+            else [1, 0, 0, 1])
+
+    def _add_overlay(self, info):
+        if getattr(self, 'viewer', None) is None:
+            return
+
+        info_keys = (
+            'reach_distance',
+            'place_distance',
+            'reach_success',
+            'pick_success',
+            'place_success',
+            'reach_reward',
+            'pick_reward',
+            'place_reward',
+            'reward')
+
+        if getattr(self.viewer, '_overlay', None) is not None:
+            self.viewer._overlay.clear()
+
+        for i, info_key in enumerate(info_keys):
+            value = (
+                str(info[info_key])
+                if isinstance(info[info_key], (bool, np.bool, np.bool_))
+                else str(round(info[info_key], 3)))
+            self.viewer.add_overlay(0, info_key, value)
+
     @_assert_task_is_set
     def step(self, action):
         self.set_xyz_action(action[:3])
@@ -71,6 +111,9 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
         terminal = False
 
         self.curr_path_length +=1
+
+        self._visualize_success(info)
+        self._add_overlay(info)
 
         return ob, reward, terminal, info
 
