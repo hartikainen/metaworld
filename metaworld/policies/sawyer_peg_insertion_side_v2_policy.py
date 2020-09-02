@@ -17,8 +17,7 @@ class SawyerPegInsertionSideV2Policy(Policy):
             'peg_pos_padding': obs[13:16],
             'peg_orientation': obs[16:20],
             'peg_velocity': obs[20:23],
-            'hole_y': obs[24],
-            'goal_pos': obs[[23, 25]],
+            'goal_pos': obs[23:26],
         }
 
     def get_action(self, obs):
@@ -41,7 +40,8 @@ class SawyerPegInsertionSideV2Policy(Policy):
         # lowest X is -.35, doesn't matter if we overshoot
         # Y is given by hole_vec
         # Z is constant at .16
-        pos_hole = np.array([-.35, o_d['hole_y'], .16])
+        hole_y = o_d['goal_pos'][1]
+        pos_hole = np.array([-.35, hole_y, .12])
 
         if np.linalg.norm(pos_curr[:2] - pos_peg[:2]) > .04:
             return pos_peg + np.array([.0, .0, .3])
