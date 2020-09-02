@@ -231,7 +231,7 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
         place_distance = np.linalg.norm(object_position - place_goal, ord=2)
         max_place_distance = self.max_place_distance
         place_success = place_distance <= 7e-2
-        place_head_success = place_head_distance <= 5e-2
+        place_head_success = place_head_distance <= 1e-2
 
         reach_reward_weight = 1.0
         max_reach_reward = reach_reward_weight
@@ -252,7 +252,7 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
             float(reach_success) * max(actions[-1], 0.0) / 10
             + pick_reward_weight * float(pick_success))
 
-        place_reward_weight = 5.0
+        place_reward_weight = 2.0
         place_distance_value = (
             place_distance
             if place_head_success
