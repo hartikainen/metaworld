@@ -68,13 +68,6 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
     def model_name(self):
         return get_asset_full_path('sawyer_xyz/sawyer_reach_push_pick_and_place.xml')
 
-    @property
-    def gripper_center_of_mass(self):
-        right_finger_pos = self.get_site_pos('rightEndEffector')
-        left_finger_pos = self.get_site_pos('leftEndEffector')
-        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
-        return gripper_center_of_mass
-
     def _visualize_success(self, info):
         reach_color = (
             [0, 1, 0, 1] if info['reach_success'] else [1, 0, 0, 1])
