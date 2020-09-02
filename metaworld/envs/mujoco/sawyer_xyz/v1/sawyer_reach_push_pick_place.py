@@ -368,7 +368,7 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 + pick_reward_weight * float(pick_success))
 
             place_reward_weight = 5.0
-            place_reward = place_reward_weight * (
+            place_reward = float(object_in_air) * place_reward_weight * (
                 max_place_distance - place_distance
             ) / max_place_distance
 
