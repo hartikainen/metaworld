@@ -11,9 +11,14 @@ class SawyerPegInsertionSideV2Policy(Policy):
     def _parse_obs(obs):
         return {
             'hand_pos': obs[:3],
-            'peg_pos': obs[3:6],
-            'hole_y': obs[-2],
-            'unused_info': obs[[6, 7, 8, 9, 11]],
+            'hand_orientation': obs[3:7],
+            'hand_velocity': obs[7:10],
+            'peg_pos': obs[10:13],
+            'peg_pos_padding': obs[13:16],
+            'peg_orientation': obs[16:20],
+            'peg_velocity': obs[20:23],
+            'hole_y': obs[24],
+            'goal_pos': obs[[23, 25]],
         }
 
     def get_action(self, obs):
