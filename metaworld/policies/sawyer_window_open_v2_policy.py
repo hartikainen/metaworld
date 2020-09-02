@@ -11,8 +11,13 @@ class SawyerWindowOpenV2Policy(Policy):
     def _parse_obs(obs):
         return {
             'hand_pos': obs[:3],
-            'wndw_pos': obs[3:6],
-            'unused_info': obs[6:],
+            'hand_orientation': obs[3:7],
+            'hand_velocity': obs[7:10],
+            'wndw_pos': obs[10:13],
+            'wndw_pos_padding': obs[13:16],
+            'wndw_orientation': obs[16:20],
+            'wndw_velocity': obs[20:23],
+            'goal_pos': obs[23:26],
         }
 
     def get_action(self, obs):
