@@ -1,5 +1,6 @@
 import numpy as np
 from gym.spaces import Box
+from scipy.spatial.transform import Rotation
 
 from metaworld.envs.env_util import get_asset_full_path
 from metaworld.envs.mujoco.sawyer_xyz.base import SawyerXYZEnv, _assert_task_is_set
@@ -43,6 +44,13 @@ class SawyerButtonPressTopdownEnv(SawyerXYZEnv):
     def model_name(self):
         return get_asset_full_path('sawyer_xyz/sawyer_button_press_topdown.xml')
 
+    @property
+    def gripper_center_of_mass(self):
+        right_finger_pos = self.get_site_pos('rightEndEffector')
+        left_finger_pos = self.get_site_pos('leftEndEffector')
+        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
+        return gripper_center_of_mass
+
     @_assert_task_is_set
     def step(self, action):
         self.set_xyz_action(action[:3])
@@ -50,15 +58,24 @@ class SawyerButtonPressTopdownEnv(SawyerXYZEnv):
         # The marker seems to get reset every time you do a simulation
         ob = self._get_obs()
         obs_dict = self._get_obs_dict()
-        reward, reachDist, pressDist = self.compute_reward(action, obs_dict)
-        self.curr_path_length +=1
-        info = {'reachDist': reachDist, 'goalDist': pressDist, 'epRew': reward, 'pickRew':None, 'success': float(pressDist <= 0.02)}
-        info['goal'] = self.goal
+        reward_info = self.compute_reward(action, obs_dict)
+        reward = reward_info['reward']
+        info = {
+            **reward_info,
+            'goal': self.goal,
+        }
+        terminal = False
 
-        return ob, reward, False, info
+        self.curr_path_length += 1
 
-    def _get_pos_objects(self):
-        return self.data.site_xpos[self.model.site_name2id('buttonStart')]
+        return ob, reward, terminal, info
+
+    def _get_object_position_orientation_velocity(self):
+        position = self.data.get_site_xpos('buttonStart').copy()
+        orientation = Rotation.from_matrix(
+            self.data.get_site_xmat('buttonStart')).as_quat()
+        velocity = self.data.get_site_xvelp('buttonStart').copy()
+        return position, orientation, velocity
 
     def _set_obj_xyz(self, pos):
         qpos = self.data.qpos.flat.copy()
@@ -84,8 +101,12 @@ class SawyerButtonPressTopdownEnv(SawyerXYZEnv):
         self.sim.model.body_pos[self.model.body_name2id('button')] = self._state_goal
         self._set_obj_xyz(0)
         self._state_goal = self.get_site_pos('hole')
-        self.maxDist = np.abs(self.data.site_xpos[self.model.site_name2id('buttonStart')][2] - self._state_goal[2])
-        self.target_reward = 1000*self.maxDist + 1000*2
+        self.max_reach_distance = np.linalg.norm(
+            self.data.get_site_xpos('buttonStart') - self.init_fingerCOM,
+            ord=2)
+        self.max_press_distance = np.abs(
+            self.data.site_xpos[self.model.site_name2id('buttonStart')][2]
+            - self._state_goal[2])
 
         return self._get_obs()
 
@@ -95,33 +116,52 @@ class SawyerButtonPressTopdownEnv(SawyerXYZEnv):
             self.data.set_mocap_quat('mocap', np.array([1, 0, 1, 0]))
             self.do_simulation([-1,1], self.frame_skip)
 
-        rightFinger, leftFinger = self.get_site_pos('rightEndEffector'), self.get_site_pos('leftEndEffector')
-        self.init_fingerCOM  =  (rightFinger + leftFinger)/2
-        self.pickCompleted = False
+        self.init_fingerCOM = self.gripper_center_of_mass
 
-    def compute_reward(self, actions, obs):
+    def compute_reward(self, actions, observation):
         del actions
 
-        obs = obs['state_observation']
-        objPos = obs[3:6]
+        object_position = observation['state_observation'][10:13]
 
-        rightFinger, leftFinger = self.get_site_pos('rightEndEffector'), self.get_site_pos('leftEndEffector')
-        fingerCOM  =  (rightFinger + leftFinger)/2
+        gripper_center_of_mass = self.gripper_center_of_mass
+        press_goal = self._state_goal[2]
 
-        pressGoal = self._state_goal[2]
+        reach_distance = np.linalg.norm(
+            object_position - gripper_center_of_mass, ord=2)
+        max_reach_distance = self.max_reach_distance
+        reach_success = reach_distance < 5e-2
 
-        pressDist = np.abs(objPos[2] - pressGoal)
-        reachDist = np.linalg.norm(objPos - fingerCOM)
-        reachRew = -reachDist
+        press_distance = np.abs(object_position[2] - press_goal)
+        max_press_distance = self.max_press_distance
+        press_success = press_distance <= 2e-2
 
-        c1 = 1000
-        c2 = 0.01
-        c3 = 0.001
-        if reachDist < 0.05:
-            pressRew = 1000*(self.maxDist - pressDist) + c1*(np.exp(-(pressDist**2)/c2) + np.exp(-(pressDist**2)/c3))
-        else:
-            pressRew = 0
-        pressRew = max(pressRew, 0)
-        reward = reachRew + pressRew
+        reach_reward_weight = 1.0
+        max_reach_reward = reach_reward_weight
 
-        return [reward, reachDist, pressDist]
+        reach_reward = (
+            max_reach_reward
+            if press_success
+            else (reach_reward_weight
+                  * (max_reach_distance - reach_distance)
+                  / max_reach_distance))
+
+        press_reward_weight = 5.0
+        press_reward = press_reward_weight * (
+            max_press_distance - press_distance
+        ) / max_press_distance
+
+        reward = reach_reward + press_reward
+        success = press_success
+
+        result = {
+            'reward': reward,
+            'reach_reward': reach_reward,
+            'reach_distance': reach_distance,
+            'reach_success': reach_success,
+            'press_reward': press_reward,
+            'press_distance': press_distance,
+            'press_success': press_success,
+            'goal_distance': press_distance,
+            'success': success,
+        }
+        return result

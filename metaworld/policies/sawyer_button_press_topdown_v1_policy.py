@@ -11,8 +11,13 @@ class SawyerButtonPressTopdownV1Policy(Policy):
     def _parse_obs(obs):
         return {
             'hand_pos': obs[:3],
-            'button_pos': obs[3:6],
-            'unused_info': obs[6:],
+            'hand_orientation': obs[3:7],
+            'hand_velocity': obs[7:10],
+            'button_pos': obs[10:13],
+            'button_pos_padding': obs[13:16],
+            'button_orientation': obs[16:20],
+            'button_velocity': obs[20:23],
+            'goal_pos': obs[23:26],
         }
 
     def get_action(self, obs):
@@ -33,7 +38,11 @@ class SawyerButtonPressTopdownV1Policy(Policy):
         pos_curr = o_d['hand_pos']
         pos_button = o_d['button_pos']
 
-        if np.linalg.norm(pos_curr[:2] - pos_button[:2]) > 0.04:
+        button_z_goal = o_d['goal_pos'][-1]
+        button_z_current = o_d['button_pos'][-1]
+
+        if (np.linalg.norm(pos_curr[:2] - pos_button[:2]) > 0.04
+            or np.abs(button_z_goal - button_z_current) < 2e-2):
             return pos_button + np.array([0., 0., 0.1])
         else:
             return pos_button
