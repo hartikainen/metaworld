@@ -14,10 +14,10 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
         hand_init_pos = (0, 0.6, 0.2)
         hand_low = (-0.5, 0.40, 0.05)
         hand_high = (0.5, 1, 0.5)
-        obj_low = (-0.1, 0.5, 0.02)
-        obj_high = (0.1, 0.7, 0.02)
-        goal_low = (-0.35, 0.5, 0.05)
-        goal_high = (-0.25, 0.8, 0.05)
+        obj_low = (.0, 0.5, 0.02)
+        obj_high = (.2, 0.7, 0.02)
+        goal_low = (-0.35, 0.4, -0.001)
+        goal_high = (-0.25, 0.7, 0.001)
 
         super().__init__(
             self.model_name,
@@ -29,13 +29,10 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
             'obj_init_pos': np.array([0, 0.6, 0.02]),
             'hand_init_pos': np.array([0, .6, .2]),
         }
-        self.goal = np.array([-0.3, 0.6, 0.05])
+        self.goal = np.array([-0.3, 0.6, 0.0])
 
         self.obj_init_pos = self.init_config['obj_init_pos']
         self.hand_init_pos = self.init_config['hand_init_pos']
-
-        goal_low = self.hand_low
-        goal_high = self.hand_high
 
         self.lift_threshold = lift_threshold
 
@@ -45,7 +42,10 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
             np.hstack((obj_low, goal_low)),
             np.hstack((obj_high, goal_high)),
         )
-        self.goal_space = Box(np.array(goal_low), np.array(goal_high))
+        self.goal_space = Box(
+            np.array(goal_low) + np.array([.03, .0, .13]),
+            np.array(goal_high) + np.array([.03, .0, .13])
+        )
 
     @property
     def model_name(self):
@@ -84,27 +84,25 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
     def reset_model(self):
         self._reset_hand()
 
-        self.sim.model.body_pos[self.model.body_name2id('box')] = np.array([-0.3, 0.6, 0.05])
-        self._target_pos = self.sim.model.site_pos[self.model.site_name2id('hole')] + self.sim.model.body_pos[self.model.body_name2id('box')]
-        self.obj_init_pos = self.init_config['obj_init_pos']
-        self.objHeight = self.get_body_com('peg').copy()[2]
-        self.pick_height_target = self.objHeight + self.lift_threshold
+        pos_peg = self.obj_init_pos
+        pos_box = self.goal
 
         if self.random_init:
-            goal_pos = self._get_state_rand_vec()
-            while np.linalg.norm(goal_pos[:2] - goal_pos[-3:-1]) < 0.1:
-                goal_pos = self._get_state_rand_vec()
-            self.obj_init_pos = np.concatenate((goal_pos[:2], [self.obj_init_pos[-1]]))
-            self.sim.model.body_pos[self.model.body_name2id('box')] = goal_pos[-3:]
-            self._target_pos = self.sim.model.site_pos[self.model.site_name2id('hole')] + self.sim.model.body_pos[self.model.body_name2id('box')]
+            pos_peg, pos_box = np.split(self._get_state_rand_vec(), 2)
+            while np.linalg.norm(pos_peg[:2] - pos_box[:2]) < 0.1:
+                pos_peg, pos_box = np.split(self._get_state_rand_vec(), 2)
 
+        self.obj_init_pos = pos_peg
         self._set_obj_xyz(self.obj_init_pos)
-        self.obj_init_pos = self.get_body_com('peg')
+        self.sim.model.body_pos[self.model.body_name2id('box')] = pos_box
+        self._target_pos = pos_box + np.array([0.1, 0.0, 0.08])
+
+        self.object_height = self.obj_init_pos[2]
+        self.pick_height_target = self.object_height + self.lift_threshold
         self.max_reach_distance = np.linalg.norm(
             self.init_fingerCOM - self.obj_init_pos, ord=2)
         self.max_place_distance = np.linalg.norm(
-            np.array([*self.obj_init_pos[:2], self.pick_height_target])
-            - np.array(self._target_pos)) + self.pick_height_target
+            self.obj_init_pos - self._target_pos, ord=2)
 
         return self._get_obs()
 
