@@ -44,13 +44,6 @@ class SawyerDrawerCloseEnv(SawyerXYZEnv):
     def model_name(self):
         return get_asset_full_path('sawyer_xyz/sawyer_drawer.xml')
 
-    @property
-    def gripper_center_of_mass(self):
-        right_finger_pos = self._get_site_pos('rightEndEffector')
-        left_finger_pos = self._get_site_pos('leftEndEffector')
-        gripper_center_of_mass = (right_finger_pos + left_finger_pos) / 2.0
-        return gripper_center_of_mass
-
     @_assert_task_is_set
     def step(self, action):
         ob = super().step(action)
