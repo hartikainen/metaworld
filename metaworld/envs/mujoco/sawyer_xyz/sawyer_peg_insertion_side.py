@@ -237,3 +237,12 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
             'success': success,
         }
         return result
+
+    def viewer_setup(self):
+        self.viewer.cam.trackbodyid = -1
+        self.viewer.cam.lookat[:3] = [-0.04424838, 0.59414413, 0.02608293]
+        self.viewer.cam.distance = 0.93
+        self.viewer.cam.elevation = -38.0
+        self.viewer.cam.azimuth = -170.0
+
+        return
