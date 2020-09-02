@@ -257,7 +257,7 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
             place_distance
             if place_head_success
             else place_head_distance)
-        place_reward = place_reward_weight * (
+        place_reward = float(object_in_air) * place_reward_weight * (
             max_place_distance - place_distance_value
         ) / max_place_distance
 
