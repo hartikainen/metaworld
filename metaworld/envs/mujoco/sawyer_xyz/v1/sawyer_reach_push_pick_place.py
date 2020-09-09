@@ -311,9 +311,9 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             reach_reward_weight = 1.0
             max_reach_reward = reach_reward_weight
 
-            reach_reward = (reach_reward_weight
-                            * (max_reach_distance - reach_distance)
-                            / max_reach_distance)
+            reach_reward = reach_reward_weight * (
+                max_reach_distance - reach_distance
+            ) / max_reach_distance
 
             push_reward_weight = 5.0
             push_reward = float(reach_success) * push_reward_weight * (
@@ -373,11 +373,9 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 + pick_reward_weight * float(pick_success))
 
             place_reward_weight = 5.0
-            place_reward = scaled_negative_log_reward(
-                place_distance,
-                max_place_distance,
-                reward_scale=float(object_in_air) * place_reward_weight,
-                epsilon=1e-2)
+            place_reward = float(object_in_air) * place_reward_weight * (
+                (max_place_distance - place_distance) / max_place_distance
+            ) + float(place_success) * place_reward_weight
 
             reward = reach_reward + pick_reward + place_reward
             success = place_success
