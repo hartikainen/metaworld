@@ -112,7 +112,11 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 'push_reward',
                 'reward')
         elif self.task_type == 'reach':
-            info_keys = ('reach_distance', 'reach_success', 'reach_reward')
+            info_keys = (
+                'reach_distance',
+                'reach_success',
+                'reach_reward',
+                'reward')
         else:
             raise ValueError(self.task_type)
 
