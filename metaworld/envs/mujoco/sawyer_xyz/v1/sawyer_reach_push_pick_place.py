@@ -277,9 +277,10 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
                 max_reach_distance - reach_distance
             ) / max_reach_distance
             success = reach_distance <= 5e-2
+            reward = reach_reward + float(success) * 1.0
 
             result = {
-                'reward': reach_reward,
+                'reward': reward,
                 'reach_reward': reach_reward,
                 'reach_distance': reach_distance,
                 'reach_success': success,
