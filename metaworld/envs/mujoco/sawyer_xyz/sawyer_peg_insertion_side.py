@@ -251,11 +251,9 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
 
         place_reward_weight = 5.0
         place_distance_value = place_distance
-        place_reward = scaled_negative_log_reward(
-            place_distance_value,
-            max_place_distance,
-            reward_scale=float(object_in_air) * place_reward_weight,
-            epsilon=1e-2)
+        place_reward = float(object_in_air) * place_reward_weight * (
+            (max_place_distance - place_distance) / max_place_distance
+        ) + float(place_success) * place_reward_weight
 
         reward = reach_reward + pick_reward + place_reward
         success = place_success
