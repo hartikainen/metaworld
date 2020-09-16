@@ -8,6 +8,20 @@ from metaworld.envs.utils import scaled_negative_log_reward
 
 
 class SawyerPegInsertionSideEnv(SawyerXYZEnv):
+    info_keys = (
+        'reward',
+        'reach_distance',
+        'reach_success',
+        'reach_reward',
+        'pick_success',
+        'pick_reward',
+        'place_distance',
+        'place_success',
+        'place_reward',
+        'goal_distance',
+        'success',
+        'goal',
+    )
 
     def __init__(self):
 
@@ -240,14 +254,14 @@ class SawyerPegInsertionSideEnv(SawyerXYZEnv):
 
         result = {
             'reward': reward,
-            'reach_reward': reach_reward,
             'reach_distance': reach_distance,
             'reach_success': reach_success,
-            'pick_reward': pick_reward,
+            'reach_reward': reach_reward,
             'pick_success': pick_success,
-            'place_reward': place_reward,
+            'pick_reward': pick_reward,
             'place_distance': place_distance,
             'place_success': success,
+            'place_reward': place_reward,
             'goal_distance': goal_distance,
             'success': success,
         }

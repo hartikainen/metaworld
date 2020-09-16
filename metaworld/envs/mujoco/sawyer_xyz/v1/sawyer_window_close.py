@@ -7,6 +7,17 @@ from metaworld.envs.mujoco.sawyer_xyz.sawyer_xyz_env import SawyerXYZEnv, _asser
 
 
 class SawyerWindowCloseEnv(SawyerXYZEnv):
+    info_keys = (
+        'reward',
+        'reach_distance',
+        'reach_reward',
+        'reach_success',
+        'pull_distance',
+        'pull_reward',
+        'pull_success',
+        'success',
+        'goal',
+    )
 
     def __init__(self):
 

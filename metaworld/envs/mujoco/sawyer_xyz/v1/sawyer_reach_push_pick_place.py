@@ -9,6 +9,24 @@ from metaworld.envs.utils import scaled_negative_log_reward
 
 class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
 
+    info_keys = (
+        'reward',
+        'reach_distance',
+        'reach_success',
+        'reach_reward',
+        'push_distance',
+        'push_success',
+        'push_reward',
+        'pick_success',
+        'pick_reward',
+        'place_distance',
+        'place_success',
+        'place_reward',
+        'goal_distance',
+        'success',
+        'goal',
+    )
+
     def __init__(self):
         lift_threshold = 0.04
         goal_low=(-0.1, 0.8, 0.05)
@@ -140,6 +158,10 @@ class SawyerReachPushPickPlaceEnv(SawyerXYZEnv):
             **reward_info,
             'goal': self.goal,
         }
+
+        for info_key in self.info_keys:
+            info.setdefault(info_key, float('nan'))
+
         terminal = False
 
         self.curr_path_length +=1

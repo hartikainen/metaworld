@@ -8,6 +8,19 @@ from metaworld.envs.utils import scaled_negative_log_reward
 
 
 class SawyerDoorEnv(SawyerXYZEnv):
+    info_keys = (
+        'reward',
+        'reach_distance',
+        'reach_success',
+        'reach_reward',
+        'pull_distance',
+        'pull_success',
+        'pull_reward',
+        'goal_distance',
+        'success',
+        'goal',
+    )
+
     def __init__(self):
 
         hand_low = (-0.5, 0.40, 0.05)
@@ -143,12 +156,12 @@ class SawyerDoorEnv(SawyerXYZEnv):
 
         result = {
             'reward': reward,
-            'reach_reward': reach_reward,
             'reach_distance': reach_distance,
             'reach_success': reach_success,
-            'pull_reward': pull_reward,
+            'reach_reward': reach_reward,
             'pull_distance': pull_distance,
             'pull_success': pull_success,
+            'pull_reward': pull_reward,
             'goal_distance': pull_distance,
             'success': success,
         }

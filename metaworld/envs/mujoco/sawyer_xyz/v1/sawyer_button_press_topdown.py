@@ -8,6 +8,19 @@ from metaworld.envs.mujoco.sawyer_xyz.sawyer_xyz_env import SawyerXYZEnv, _asser
 
 class SawyerButtonPressTopdownEnv(SawyerXYZEnv):
 
+    info_keys = (
+        'reward',
+        'reach_distance',
+        'reach_success',
+        'reach_reward',
+        'press_distance',
+        'press_success',
+        'press_reward',
+        'goal_distance',
+        'success',
+        'goal',
+    )
+
     def __init__(self):
 
         hand_low = (-0.5, 0.40, 0.05)
@@ -50,10 +63,12 @@ class SawyerButtonPressTopdownEnv(SawyerXYZEnv):
         obs_dict = self._get_obs_dict()
         reward_info = self.compute_reward(action, obs_dict)
         reward = reward_info['reward']
+
         info = {
             **reward_info,
             'goal': self.goal,
         }
+
         terminal = False
 
         self.curr_path_length += 1
@@ -146,12 +161,12 @@ class SawyerButtonPressTopdownEnv(SawyerXYZEnv):
 
         result = {
             'reward': reward,
-            'reach_reward': reach_reward,
             'reach_distance': reach_distance,
             'reach_success': reach_success,
-            'press_reward': press_reward,
+            'reach_reward': reach_reward,
             'press_distance': press_distance,
             'press_success': press_success,
+            'press_reward': press_reward,
             'goal_distance': press_distance,
             'success': success,
         }
